@@ -115,8 +115,8 @@ struct AppDetailView: View {
 
             Section {
                 HStack { Text("Version"); Spacer(); Text(live.version ?? "—") }
-                HStack { Text("Size"); Spacer(); Text(live.sizeBytes.map(Self.bytes) } ?? "—")
-                HStack { Text("Last Used"); Spacer(); Text(live.lastUsed.map(Self.when) } ?? "Never from Husk")
+                HStack { Text("Size"); Spacer(); Text(live.sizeBytes.map(Self.bytes) ?? "—") }
+                HStack { Text("Last Used"); Spacer(); Text(live.lastUsed.map(Self.when) ?? "Never from Husk") }
             }
 
             Section {
