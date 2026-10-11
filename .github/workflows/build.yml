@@ -17,7 +17,7 @@ jobs:
       - name: 生成 Xcode 工程
         run: xcodegen generate
         
-      - name: 構建
+      - name: 構建 App
         run: |
           xcodebuild -project Husk-iOS15.xcodeproj \
             -scheme Husk-iOS15 \
@@ -25,4 +25,16 @@ jobs:
             -configuration Release \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
-            2>&1 | head -100
+            CODE_SIGNING_REQUIRED=NO
+          
+      - name: 打包 IPA
+        run: |
+          mkdir -p Payload
+          cp -r build/Build/Products/Release-iphoneos/Husk-iOS15.app Payload/
+          zip -r Husk-iOS15.ipa Payload/
+          
+      - name: 上傳 IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: husk-ios15-ipa
+          path: Husk-iOS15.ipa
