@@ -472,7 +472,6 @@ struct GuestScreenView: View {
         .persistentSystemOverlays(.hidden)
         .sheet(isPresented: $showControls) {
             ControlsSheet(keyboard: $keyboard)
-                ])
         }
     }
 }

@@ -189,7 +189,7 @@ struct GamePage: View {
                         Label(st.result.label, systemImage: st.result.symbol).foregroundStyle(st.result.color)
                     }
                 }
-                HStack { Text("Last Played"); Spacer(); Text(app.lastPlayed.map { $0.formatted(date: .abbreviated, time: .shortened) } } ?? "Never")
+                HStack { Text("Last Played"); Spacer(); Text(app.lastPlayed.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "Never") } .abbreviated, time: .shortened) } } ?? "Never")
                 HStack { Text("Size"); Spacer(); Text(fileBytes(app.apks) })
             }
 
