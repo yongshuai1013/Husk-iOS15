@@ -6,6 +6,14 @@ import UIKit
 #if canImport(ActivityKit)
 import ActivityKit
 
+// MARK: - iOS 15 兼容：避免 Swift 6 URLRequest.httpMethod overlay 符號缺失
+fileprivate func makeURLRequest(url: URL, method: String) -> URLRequest {
+    let m = NSMutableURLRequest(url: url)
+    m.httpMethod = method
+    return m as URLRequest
+}
+
+
 // 替代 CocoaError，避免 iOS 15 符號缺失
 enum DownloadFileError: Error {
     case fileWriteUnknown
@@ -482,8 +490,7 @@ final class Downloads: ObservableObject {
     }
 
     private static func fetchManifest(_ url: URL) async -> Manifest? {
-        var req = URLRequest(url: url)
-        req.httpMethod = "HEAD"
+        var req = makeURLRequest(url: url, method: "HEAD")
         req.timeoutInterval = 15
         guard let (_, head) = try? await URLSession.shared.data(for: req), let http = head as? HTTPURLResponse,
               (http.value(forHTTPHeaderField: "Content-Type") ?? "").contains("json"), http.expectedContentLength < 64 << 20 else { return nil }
@@ -493,8 +500,7 @@ final class Downloads: ObservableObject {
     }
 
     private static func probe(_ url: URL) async -> (String, Int64) {
-        var req = URLRequest(url: url)
-        req.httpMethod = "HEAD"
+        var req = makeURLRequest(url: url, method: "HEAD")
         req.timeoutInterval = 15
         let fallback = url.lastPathComponent.isEmpty ? (url.host ?? "download") : url.lastPathComponent
         guard let (_, r) = try? await URLSession.shared.data(for: req) else { return (fallback, 0) }
