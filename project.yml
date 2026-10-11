@@ -27,7 +27,7 @@ targets:
           - "**/*.swift"
           - "**/*.h"
           - "**/*.c"
-      - path: src/refactored
+      - path: src/app/Husk
         includes:
           - "**/*.swift"
     settings:
