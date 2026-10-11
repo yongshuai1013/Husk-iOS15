@@ -494,7 +494,8 @@ final class Downloads: ObservableObject {
         req.timeoutInterval = 15
         guard let (_, head) = try? await URLSession.shared.data(for: req), let http = head as? HTTPURLResponse,
               (http.value(forHTTPHeaderField: "Content-Type") ?? "").contains("json"), http.expectedContentLength < 64 << 20 else { return nil }
-        req.httpMethod = "GET"
+        req = makeURLRequest(url: url, method: "GET")
+        req.timeoutInterval = 15
         guard let (data, _) = try? await URLSession.shared.data(for: req) else { return nil }
         return try? JSONDecoder().decode(Manifest.self, from: data)
     }
