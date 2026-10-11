@@ -1,5 +1,14 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 import Foundation
+// MARK: - iOS 15 兼容：避免 Swift 6 URLRequest overlay 符號缺失
+fileprivate func makeURLRequest(url: URL, method: String? = nil, cachePolicy: NSURLRequest.CachePolicy? = nil, timeoutInterval: TimeInterval? = nil, httpBody: Data? = nil) -> URLRequest {
+    let m = NSMutableURLRequest(url: url)
+    if let method = method { m.httpMethod = method }
+    if let cachePolicy = cachePolicy { m.cachePolicy = cachePolicy }
+    if let timeoutInterval = timeoutInterval { m.timeoutInterval = timeoutInterval }
+    if let httpBody = httpBody { m.httpBody = httpBody }
+    return m as URLRequest
+}
 
 /// Geode, the mod loader for Geometry Dash, for the translation layer to load into the game (husk-tl-geode.c).
 ///
@@ -143,8 +152,7 @@ final class GeodeSupport: ObservableObject {
     }
 
     private static func json(_ url: URL) async throws -> [String: Any] {
-        var req = URLRequest(url: url)
-        req.timeoutInterval = 30
+        var req = makeURLRequest(url: url, timeoutInterval: 30)
         req.setValue("Husk", forHTTPHeaderField: "User-Agent")
         let (data, response) = try await URLSession.shared.data(for: req)
         guard (response as? HTTPURLResponse)?.statusCode == 200,
@@ -181,8 +189,7 @@ final class GeodeSupport: ObservableObject {
     }
 
     private static func download(_ url: URL, to dest: URL) async throws {
-        var req = URLRequest(url: url)
-        req.timeoutInterval = 120
+        var req = makeURLRequest(url: url, timeoutInterval: 120)
         req.setValue("Husk", forHTTPHeaderField: "User-Agent")
         let (tmp, response) = try await URLSession.shared.download(for: req)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else {

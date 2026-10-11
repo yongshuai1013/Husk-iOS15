@@ -1,6 +1,15 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 import CryptoKit
 import SwiftUI
+// MARK: - iOS 15 兼容：避免 Swift 6 URLRequest overlay 符號缺失
+fileprivate func makeURLRequest(url: URL, method: String? = nil, cachePolicy: NSURLRequest.CachePolicy? = nil, timeoutInterval: TimeInterval? = nil, httpBody: Data? = nil) -> URLRequest {
+    let m = NSMutableURLRequest(url: url)
+    if let method = method { m.httpMethod = method }
+    if let cachePolicy = cachePolicy { m.cachePolicy = cachePolicy }
+    if let timeoutInterval = timeoutInterval { m.timeoutInterval = timeoutInterval }
+    if let httpBody = httpBody { m.httpBody = httpBody }
+    return m as URLRequest
+}
 
 /// Gameplay pictures for apps that have been run on an iPhone, kept on GitHub rather than in the app.
 ///
@@ -98,9 +107,7 @@ final class ShowcaseStore: ObservableObject {
     }
 
     private func fetchIndex() async -> Index? {
-        var request = URLRequest(url: Self.base.appendingPathComponent("index.json"))
-        request.cachePolicy = .reloadIgnoringLocalCacheData
-        request.timeoutInterval = 20
+        var request = makeURLRequest(url: Self.base.appendingPathComponent("index.json"), cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
         guard let (data, response) = try? await URLSession.shared.data(for: request),
               (response as? HTTPURLResponse)?.statusCode == 200,
               let parsed = try? JSONDecoder().decode(Index.self, from: data) else {
@@ -116,9 +123,7 @@ final class ShowcaseStore: ObservableObject {
         for entry in entries {
             // Only plain file names: the index is data from the network, not paths to trust.
             guard !entry.file.contains("/"), !entry.file.hasPrefix(".") else { continue }
-            var request = URLRequest(url: Self.base.appendingPathComponent(entry.file))
-            request.cachePolicy = .reloadIgnoringLocalCacheData
-            request.timeoutInterval = 60
+            var request = makeURLRequest(url: Self.base.appendingPathComponent(entry.file), cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 60)
             guard let (data, response) = try? await URLSession.shared.data(for: request),
                   (response as? HTTPURLResponse)?.statusCode == 200 else { continue }
             let sum = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()

@@ -6,10 +6,13 @@ import UIKit
 #if canImport(ActivityKit)
 import ActivityKit
 
-// MARK: - iOS 15 兼容：避免 Swift 6 URLRequest.httpMethod overlay 符號缺失
-fileprivate func makeURLRequest(url: URL, method: String) -> URLRequest {
+// MARK: - iOS 15 兼容：避免 Swift 6 URLRequest overlay 符號缺失
+fileprivate func makeURLRequest(url: URL, method: String? = nil, cachePolicy: NSURLRequest.CachePolicy? = nil, timeoutInterval: TimeInterval? = nil, httpBody: Data? = nil) -> URLRequest {
     let m = NSMutableURLRequest(url: url)
-    m.httpMethod = method
+    if let method = method { m.httpMethod = method }
+    if let cachePolicy = cachePolicy { m.cachePolicy = cachePolicy }
+    if let timeoutInterval = timeoutInterval { m.timeoutInterval = timeoutInterval }
+    if let httpBody = httpBody { m.httpBody = httpBody }
     return m as URLRequest
 }
 
@@ -490,19 +493,16 @@ final class Downloads: ObservableObject {
     }
 
     private static func fetchManifest(_ url: URL) async -> Manifest? {
-        var req = makeURLRequest(url: url, method: "HEAD")
-        req.timeoutInterval = 15
+        var req = makeURLRequest(url: url, method: "HEAD", timeoutInterval: 15)
         guard let (_, head) = try? await URLSession.shared.data(for: req), let http = head as? HTTPURLResponse,
               (http.value(forHTTPHeaderField: "Content-Type") ?? "").contains("json"), http.expectedContentLength < 64 << 20 else { return nil }
-        req = makeURLRequest(url: url, method: "GET")
-        req.timeoutInterval = 15
+        req = makeURLRequest(url: url, method: "GET", timeoutInterval: 15)
         guard let (data, _) = try? await URLSession.shared.data(for: req) else { return nil }
         return try? JSONDecoder().decode(Manifest.self, from: data)
     }
 
     private static func probe(_ url: URL) async -> (String, Int64) {
-        var req = makeURLRequest(url: url, method: "HEAD")
-        req.timeoutInterval = 15
+        var req = makeURLRequest(url: url, method: "HEAD", timeoutInterval: 15)
         let fallback = url.lastPathComponent.isEmpty ? (url.host ?? "download") : url.lastPathComponent
         guard let (_, r) = try? await URLSession.shared.data(for: req) else { return (fallback, 0) }
         let name = r.suggestedFilename.flatMap { $0.isEmpty || $0 == "Unknown" ? nil : $0 } ?? fallback

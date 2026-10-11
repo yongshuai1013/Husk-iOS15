@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 import Foundation
 
-// MARK: - iOS 15 兼容：避免 Swift 6 URLRequest.httpMethod overlay 符號缺失
-fileprivate func makeURLRequest(url: URL, method: String) -> URLRequest {
+// MARK: - iOS 15 兼容：避免 Swift 6 URLRequest overlay 符號缺失
+fileprivate func makeURLRequest(url: URL, method: String? = nil, cachePolicy: NSURLRequest.CachePolicy? = nil, timeoutInterval: TimeInterval? = nil, httpBody: Data? = nil) -> URLRequest {
     let m = NSMutableURLRequest(url: url)
-    m.httpMethod = method
+    if let method = method { m.httpMethod = method }
+    if let cachePolicy = cachePolicy { m.cachePolicy = cachePolicy }
+    if let timeoutInterval = timeoutInterval { m.timeoutInterval = timeoutInterval }
+    if let httpBody = httpBody { m.httpBody = httpBody }
     return m as URLRequest
 }
 
@@ -58,10 +61,6 @@ enum PlayAPI {
         guard let url = URL(string: dispenserURL) else {
             throw PlayError("Invalid dispenser URL: \(dispenserURL)")
         }
-        var req = makeURLRequest(url: url, method: "POST")
-        req.setValue("com.aurora.store-4.6.1-70", forHTTPHeaderField: "User-Agent")
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
         let deviceProps: [String: String] = [
             "Build.HARDWARE": PlayDevice.hardware,
             "Build.RADIO": PlayDevice.radio,
@@ -92,7 +91,9 @@ enum PlayAPI {
             "CellOperator": PlayDevice.cellOperator
         ]
 
-        req.httpBody = try? JSONSerialization.data(withJSONObject: deviceProps)
+        var req = makeURLRequest(url: url, method: "POST", httpBody: try? JSONSerialization.data(withJSONObject: deviceProps))
+        req.setValue("com.aurora.store-4.6.1-70", forHTTPHeaderField: "User-Agent")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         let (data, response) = try await urlSession.data(for: req)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else {
@@ -164,11 +165,10 @@ enum PlayAPI {
             ("callerSig", callerSig),
             ("droidguard_results", "null"),
         ]
-        var req = makeURLRequest(url: authURL, method: "POST")
+        var req = makeURLRequest(url: authURL, method: "POST", httpBody: Data(form(params).utf8))
         req.setValue("com.google.android.gms", forHTTPHeaderField: "app")
         req.setValue(PlayDevice.authUserAgent, forHTTPHeaderField: "User-Agent")
         req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        req.httpBody = Data(form(params).utf8)
         let (data, response) = try await urlSession.data(for: req)
         let kv = parseKeyValues(data)
         guard (response as? HTTPURLResponse)?.statusCode == 200, let token = kv["Token"], !token.isEmpty else {
@@ -198,12 +198,11 @@ enum PlayAPI {
             ("service", "oauth2:https://www.googleapis.com/auth/googleplay"),
             ("droidguard_results", "null"),
         ]
-        var req = makeURLRequest(url: authURL, method: "POST")
+        var req = makeURLRequest(url: authURL, method: "POST", httpBody: Data(form(params).utf8))
         req.setValue("com.google.android.gms", forHTTPHeaderField: "app")
         req.setValue(PlayDevice.authUserAgent, forHTTPHeaderField: "User-Agent")
         req.setValue(s.gsfID, forHTTPHeaderField: "device")
         req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        req.httpBody = Data(form(params).utf8)
         let (data, response) = try await urlSession.data(for: req)
         let kv = parseKeyValues(data)
         guard (response as? HTTPURLResponse)?.statusCode == 200, let token = kv["Auth"], !token.isEmpty else {
@@ -216,11 +215,10 @@ enum PlayAPI {
 
     /// Checkin: Google gives this device an id (and a consistency token).
     static func checkin() async throws -> (gsfID: String, consistency: String) {
-        var req = makeURLRequest(url: checkinURL, method: "POST")
+        var req = makeURLRequest(url: checkinURL, method: "POST", httpBody: PlayDevice.checkinRequest())
         req.setValue("com.google.android.gms", forHTTPHeaderField: "app")
         req.setValue(PlayDevice.authUserAgent, forHTTPHeaderField: "User-Agent")
         req.setValue("application/x-protobuffer", forHTTPHeaderField: "Content-Type")
-        req.httpBody = PlayDevice.checkinRequest()
         let (data, response) = try await urlSession.data(for: req)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else {
             throw PlayError("Google did not register the device (HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)).")
@@ -266,10 +264,9 @@ enum PlayAPI {
                          post: Bool = false) async throws -> ProtoMessage {
         var comps = URLComponents(string: fdfe + path)!
         if !query.isEmpty { comps.queryItems = (comps.queryItems ?? []) + query.map { URLQueryItem(name: $0.0, value: $0.1) } }
-        var req = makeURLRequest(url: comps.url!, method: (body != nil || post) ? "POST" : "GET")
+        var req = makeURLRequest(url: comps.url!, method: (body != nil || post) ? "POST" : "GET", httpBody: body)
         for (k, v) in headers(s) { req.setValue(v, forHTTPHeaderField: k) }
-        if let body {
-            req.httpBody = body
+        if body != nil {
             req.setValue("application/x-protobuf", forHTTPHeaderField: "Content-Type")
         }
         let (data, response) = try await urlSession.data(for: req)

@@ -1,5 +1,14 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 import SwiftUI
+// MARK: - iOS 15 兼容：避免 Swift 6 URLRequest overlay 符號缺失
+fileprivate func makeURLRequest(url: URL, method: String? = nil, cachePolicy: NSURLRequest.CachePolicy? = nil, timeoutInterval: TimeInterval? = nil, httpBody: Data? = nil) -> URLRequest {
+    let m = NSMutableURLRequest(url: url)
+    if let method = method { m.httpMethod = method }
+    if let cachePolicy = cachePolicy { m.cachePolicy = cachePolicy }
+    if let timeoutInterval = timeoutInterval { m.timeoutInterval = timeoutInterval }
+    if let httpBody = httpBody { m.httpBody = httpBody }
+    return m as URLRequest
+}
 
 // MARK: - what's new
 
@@ -112,8 +121,7 @@ final class AppUpdates: ObservableObject {
     func check() async {
         let d = UserDefaults.standard
         if Date().timeIntervalSince1970 - d.double(forKey: Self.checkedKey) < 12 * 3600 { return }
-        var req = URLRequest(url: Self.api)
-        req.timeoutInterval = 20
+        var req = makeURLRequest(url: Self.api, timeoutInterval: 20)
         req.setValue("Husk", forHTTPHeaderField: "User-Agent")
         guard let (data, response) = try? await URLSession.shared.data(for: req),
               (response as? HTTPURLResponse)?.statusCode == 200,
