@@ -81,7 +81,7 @@ struct DirectoryView: View {
         }
         .sheet(isPresented: $showImportSheet) {
             ImportSheet(destination: path) { showImportSheet = false; importing = true }
-                .presentationDetents([.height(340)])
+                ])
         }
         .huskFilePicker(isPresented: $importing) { urls in
             host.sendFiles(urls, to: path)

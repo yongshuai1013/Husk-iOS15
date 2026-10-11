@@ -163,7 +163,7 @@ struct ContentView: View {
         .sheet(isPresented: Binding(get: { !incoming.waiting.isEmpty },
                                     set: { if !$0 { incoming.discard() } })) {
             IncomingChooser()
-                .presentationDetents([.medium])
+                
                 .presentationDragIndicator(.visible)
         }
         // APKs meant for Android wait until it can take them.
@@ -472,7 +472,7 @@ struct GuestScreenView: View {
         .persistentSystemOverlays(.hidden)
         .sheet(isPresented: $showControls) {
             ControlsSheet(keyboard: $keyboard)
-                .presentationDetents([.height(300)])
+                ])
         }
     }
 }

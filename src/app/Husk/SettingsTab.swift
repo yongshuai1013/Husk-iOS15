@@ -787,8 +787,8 @@ struct AboutSettings: View {
             }
 
             Section {
-                LabeledContent("Build", value: Bundle.main.commit)
-                LabeledContent("Guest image", value: GuestImage.imageVersion)
+                HStack { Text("Build"); Spacer(); Text(Bundle.main.commit) }
+                HStack { Text("Guest image"); Spacer(); Text(GuestImage.imageVersion) }
                 LabeledContent("Renderer",
                                value: runner.displayKind == .gl ? "GPU"
                                     : runner.displayKind == .software ? "CPU"

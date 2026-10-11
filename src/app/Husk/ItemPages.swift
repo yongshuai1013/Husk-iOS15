@@ -183,14 +183,14 @@ struct GamePage: View {
             }
 
             Section("About") {
-                LabeledContent("Runs With", value: app.report?.runnerName ?? "Unknown")
+                HStack { Text("Runs With"); Spacer(); Text(app.report?.runnerName ?? "Unknown") }
                 if let st = GameStatusStore.shared.status(app.id) {
                     LabeledContent("Last Result") {
                         Label(st.result.label, systemImage: st.result.symbol).foregroundStyle(st.result.color)
                     }
                 }
-                LabeledContent("Last Played", value: app.lastPlayed.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "Never")
-                LabeledContent("Size", value: fileBytes(app.apks))
+                HStack { Text("Last Played"); Spacer(); Text(app.lastPlayed.map { $0.formatted(date: .abbreviated, time: .shortened) } } ?? "Never")
+                HStack { Text("Size"); Spacer(); Text(fileBytes(app.apks) })
             }
 
             Section {
@@ -377,10 +377,10 @@ struct AndroidAppPage: View {
             }
 
             Section("About") {
-                LabeledContent("Version", value: live.version ?? "—")
-                LabeledContent("Size", value: live.sizeBytes.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) } ?? "—")
-                LabeledContent("Package", value: live.name)
-                if let b = live.bitness { LabeledContent("Architecture", value: b) }
+                HStack { Text("Version"); Spacer(); Text(live.version ?? "—") }
+                HStack { Text("Size"); Spacer(); Text(live.sizeBytes.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) } } ?? "—")
+                HStack { Text("Package"); Spacer(); Text(live.name) }
+                if let b = live.bitness { HStack { Text("Architecture"); Spacer(); Text(b) } }
             }
 
             Section {
