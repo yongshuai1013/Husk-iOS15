@@ -1,0 +1,38 @@
+# Husk-iOS15 - XcodeGen 配置
+# 參考 PaxIDX 的 project.yml，iOS 15 最小重構版
+
+name: Husk-iOS15
+
+options:
+  bundleIdPrefix: com.yongshuai
+
+deploymentTarget:
+  iOS: "15.0"
+
+settings:
+  base:
+    HUSK_BUNDLE_ID: com.yongshuai.husk-ios15
+    HUSK_DISPLAY_NAME: Husk iOS15
+    HUSK_MARKETING_VERSION: "0.1.0"
+    HUSK_BUILD_NUMBER: "1"
+
+targets:
+  Husk-iOS15:
+    type: application
+    platform: iOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: src/minimal
+        includes:
+          - "**/*.swift"
+          - "**/*.h"
+          - "**/*.c"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.yongshuai.husk-ios15
+        PRODUCT_NAME: Husk-iOS15
+        INFOPLIST_FILE: src/minimal/Info.plist
+        SWIFT_VERSION: "5.0"
+        IPHONEOS_DEPLOYMENT_TARGET: "15.0"
+        # 橋接頭文件
+        SWIFT_OBJC_BRIDGING_HEADER: src/minimal/HuskBridge.h
