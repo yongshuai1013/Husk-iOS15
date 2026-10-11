@@ -16,6 +16,7 @@
 #include <string.h>
 #include <stdbool.h>
 #include <time.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <zlib.h>
 
@@ -50,7 +51,7 @@ static tl_looper *looper_make(void)
     return l;
 }
 static void *b_ALooper_prepare(int opts) { (void)opts; if (!t_looper) t_looper = looper_make(); return t_looper; }
-static void *b_ALooper_forThread(void) { return t_looper; }
+static void *b_ALooper_forThread(void) { if (!t_looper && getenv("TL_LOOPER_TRACE")) { char nm[32] = ""; pthread_getname_np(pthread_self(), nm, sizeof(nm)); tl_log_line("looper: ALooper_forThread on '%s', which has none", nm); } return t_looper; }
 static void b_ALooper_acquire(tl_looper *l) { if (l) atomic_fetch_add(&l->refs, 1); }
 static void b_ALooper_release(tl_looper *l) { (void)l; }
 static void b_ALooper_wake(tl_looper *l)
@@ -567,6 +568,26 @@ static int b_AAsset_openFileDescriptor(tl_asset *a, long *start, long *len)
     return fd;
 }
 
+/* OpenMAX AL: there is no media engine of that kind here (XA_RESULT_FEATURE_UNSUPPORTED) */
+static uint32_t b_xaCreateEngine(void **engine, uint32_t n, const void *opts, uint32_t ni, const void *ids, const void *req) { (void)n; (void)opts; (void)ni; (void)ids; (void)req; if (engine) *engine = NULL; return 12; }
+static uint32_t b_xaQueryNumSupportedEngineInterfaces(uint32_t *n) { if (n) *n = 0; return 0; }
+static uint32_t b_xaQuerySupportedEngineInterfaces(uint32_t i, const void **id) { (void)i; (void)id; return 2; }   /* XA_RESULT_PARAMETER_INVALID */
+
+/* ASharedMemory: an unnamed file of the size asked, as a descriptor to map (Android's is ashmem / memfd) */
+static int b_ASharedMemory_create(const char *name, size_t size)
+{
+    (void)name;
+    char path[] = "/tmp/husk-ashmem-XXXXXX";
+    int fd = mkstemp(path);
+    if (fd < 0) return -1;
+    unlink(path);
+    if (ftruncate(fd, (off_t)size)) { close(fd); return -1; }
+    return fd;
+}
+static size_t b_ASharedMemory_getSize(int fd) { struct stat st; return fstat(fd, &st) ? 0 : (size_t)st.st_size; }
+static int b_ASharedMemory_setProt(int fd, int prot) { (void)fd; (void)prot; return 0; }
+static int b_ASharedMemory_dupFromJava(void *env, void *obj) { (void)env; (void)obj; return -1; }
+
 /* ---------------------------------------------------------------- windows */
 
 /*
@@ -912,6 +933,10 @@ const tl_bionic_entry tl_tab_ndk[] = {
     TL_WRAP("AAsset_getLength64", b_AAsset_getLength), TL_WRAP("AAsset_getRemainingLength", b_AAsset_getRemainingLength),
     TL_WRAP("AAsset_getRemainingLength64", b_AAsset_getRemainingLength), TL_WRAP("AAsset_getBuffer", b_AAsset_getBuffer),
     TL_WRAP("AAsset_seek", b_AAsset_seek), TL_WRAP("AAsset_seek64", b_AAsset_seek), TL_WRAP("AAsset_isAllocated", b_AAsset_isAllocated),
+    TL_WRAP("xaCreateEngine", b_xaCreateEngine), TL_WRAP("xaQueryNumSupportedEngineInterfaces", b_xaQueryNumSupportedEngineInterfaces),
+    TL_WRAP("xaQuerySupportedEngineInterfaces", b_xaQuerySupportedEngineInterfaces),
+    TL_WRAP("ASharedMemory_create", b_ASharedMemory_create), TL_WRAP("ASharedMemory_getSize", b_ASharedMemory_getSize),
+    TL_WRAP("ASharedMemory_setProt", b_ASharedMemory_setProt), TL_WRAP("ASharedMemory_dupFromJava", b_ASharedMemory_dupFromJava),
     TL_WRAP("AAsset_openFileDescriptor", b_AAsset_openFileDescriptor), TL_WRAP("AAsset_openFileDescriptor64", b_AAsset_openFileDescriptor64),
     /* systrace (libandroid): nothing records traces here */
     TL_WRAP("ATrace_beginSection", b_atrace_noop), TL_WRAP("ATrace_endSection", b_atrace_noop), TL_WRAP("ATrace_isEnabled", b_atrace_false),

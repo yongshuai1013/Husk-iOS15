@@ -192,7 +192,8 @@ NAT(N_log)
 /* Assets: the app's APK first, then its splits and asset packs (a Play install keeps a game's data in an install-time asset pack). */
 static const tl_zip_entry *asset_find(const char *n, const tl_zip **zout)
 {
-    char path[1024]; snprintf(path, sizeof(path), "assets/%s", n ? n : "");
+    /* "/lib/x.so": a file from the APK's root (openNonAssetFd), which asset names never start with */
+    char path[1024]; if (n && n[0] == '/') snprintf(path, sizeof(path), "%s", n + 1); else snprintf(path, sizeof(path), "assets/%s", n ? n : "");
     for (int i = 0; i < 16; i++) {
         const tl_zip *z = tl_ld_apk_at(i);
         if (!z) { if (i == 0) continue; break; }
@@ -436,6 +437,7 @@ NAT(N_insets)
 static void *gl_main(void *arg);
 NAT(N_startGL)
 {
+    void tl_thread_altstack(void); tl_thread_altstack();
     (void)self; (void)ret;
     if (A.gl_started) return true;
     A.gl_version = a[2].i; A.gl_view = a[0].l;
@@ -1065,6 +1067,7 @@ static void log_pending_stack(void)
 
 static void *app_main(void *arg)
 {
+    void tl_thread_altstack(void); tl_thread_altstack();
     (void)arg;
     pthread_setname_np("main");
     jvalue a[2] = { L(dvm_new_string_utf8(A.activity)), L(A.application[0] ? dvm_new_string_utf8(A.application) : NULL) };
