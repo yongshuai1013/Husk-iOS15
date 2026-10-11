@@ -15,6 +15,7 @@ struct ContentView: View {
     var body: some View {
         NavigationView {
             List {
+                NavigationLink("APK 列表", destination: ApkListView())
                 NavigationLink("啟動 Alpine (測試)", destination: QemuView())
                 NavigationLink("關於", destination: AboutView())
             }
