@@ -378,7 +378,7 @@ struct AndroidAppPage: View {
 
             Section("About") {
                 HStack { Text("Version"); Spacer(); Text(live.version ?? "—") }
-                HStack { Text("Size"); Spacer(); Text(live.sizeBytes.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) } ?? "\u2014") }
+                HStack { Text("Size"); Spacer(); Text(live.sizeBytes.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) } ?? "\u{2014}") }
                 HStack { Text("Package"); Spacer(); Text(live.name) }
                 if let b = live.bitness { HStack { Text("Architecture"); Spacer(); Text(b) } }
             }
