@@ -30,6 +30,18 @@ targets:
       - path: src/app/Husk
         includes:
           - "**/*.swift"
+      - path: src/app/Husk/Play
+        includes:
+          - "**/*.swift"
+      - path: src/app/HuskJITHelper
+        includes:
+          - "**/*.swift"
+      - path: src/app/HuskDownloadsWidget
+        includes:
+          - "**/*.swift"
+      - path: src/app/Shared
+        includes:
+          - "**/*.swift"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.yongshuai.husk-ios15
