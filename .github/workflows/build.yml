@@ -66,6 +66,12 @@ jobs:
         run: |
           xcodebuild -project src/app/Husk.xcodeproj -scheme Husk clean || true
       
+      - name: 安裝 xcodegen
+        run: brew install xcodegen
+        
+      - name: 生成 Xcode 工程
+        run: xcodegen generate
+      
       - name: 打包 IPA
         run: |
           mkdir -p build
