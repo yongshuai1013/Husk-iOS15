@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// APK 列表 - 精簡版，參考 Husk TranslationLayer.swift
+// APK 列表 - 點擊後傳遞到 QEMU 視圖
 import SwiftUI
 import Foundation
 
@@ -14,14 +14,22 @@ struct ApkListView: View {
     
     var body: some View {
         List(apks) { apk in
-            NavigationLink(apk.name, destination: QemuView())
+            NavigationLink(destination: QemuView(apk: apk)) {
+                VStack(alignment: .leading) {
+                    Text(apk.name)
+                        .font(.headline)
+                    Text(apk.path)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+            }
         }
         .navigationTitle("APK 列表")
         .onAppear(perform: scanApks)
     }
     
     private func scanApks() {
-        // 掃描 Documents 目錄下的 .apk 文件
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         do {
             let files = try FileManager.default.contentsOfDirectory(at: docs, includingPropertiesForKeys: nil)
