@@ -103,7 +103,7 @@ void husk_snapshot_save(void (*cb)(bool ok, const char *what));
 void husk_balloon_set_bytes(int64_t target_bytes);
 
 /* --- On-device pairing for Built-in StikJIT (JITPairing.swift) --- */
-#include "HuskRPPairing.h"
+// #include "HuskRPPairing.h" // minimal 暫不需要
 
 /* --- The experimental translation layer --- */
 /* Compiled into the app itself, not into the QEMU library: see
