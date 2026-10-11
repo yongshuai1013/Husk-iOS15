@@ -27,6 +27,9 @@ targets:
           - "**/*.swift"
           - "**/*.h"
           - "**/*.c"
+      - path: src/refactored
+        includes:
+          - "**/*.swift"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.yongshuai.husk-ios15
