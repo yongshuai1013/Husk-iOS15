@@ -33,9 +33,7 @@ targets:
       - path: src/app/Husk/Play
         includes:
           - "**/*.swift"
-      - path: src/app/HuskJITHelper
-        includes:
-          - "**/*.swift"
+
       - path: src/app/HuskDownloadsWidget
         includes:
           - "**/*.swift"
@@ -49,5 +47,9 @@ targets:
         INFOPLIST_FILE: src/minimal/Info.plist
         SWIFT_VERSION: "5.0"
         IPHONEOS_DEPLOYMENT_TARGET: "15.0"
+        HEADER_SEARCH_PATHS:
+          - src/minimal
+          - src/translation-layer
+          - src/translation-layer-next
         # 橋接頭文件
         SWIFT_OBJC_BRIDGING_HEADER: src/minimal/HuskBridge.h
