@@ -40,6 +40,18 @@ targets:
       - path: src/app/Shared
         includes:
           - "**/*.swift"
+      - path: src/ios-jit
+        includes:
+          - "**/*.c"
+          - "**/*.h"
+      - path: src/translation-layer
+        includes:
+          - "**/*.c"
+          - "**/*.h"
+      - path: src/translation-layer-next
+        includes:
+          - "**/*.c"
+          - "**/*.h"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.yongshuai.husk-ios15
