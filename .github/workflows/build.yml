@@ -1,0 +1,28 @@
+name: Build Husk-iOS15
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: 安裝 xcodegen
+        run: brew install xcodegen
+        
+      - name: 生成 Xcode 工程
+        run: xcodegen generate
+        
+      - name: 構建
+        run: |
+          xcodebuild -project Husk-iOS15.xcodeproj \
+            -scheme Husk-iOS15 \
+            -sdk iphoneos \
+            -configuration Release \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            2>&1 | head -100
