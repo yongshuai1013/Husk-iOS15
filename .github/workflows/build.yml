@@ -1,40 +1,88 @@
-name: Build Husk-iOS15
+name: Build Husk iOS
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
 
 jobs:
   build:
     runs-on: macos-latest
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
       
-      - name: 安裝 xcodegen
-        run: brew install xcodegen
-        
-      - name: 生成 Xcode 工程
-        run: xcodegen generate
-        
-      - name: 構建 App
+      - name: 安裝依賴工具
         run: |
-          xcodebuild -project Husk-iOS15.xcodeproj \
-            -scheme Husk-iOS15 \
-            -sdk iphoneos \
-            -configuration Release \
-            -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO
-          
+          brew install pkg-config meson ninja glib qemu cmake 2>/dev/null || true
+          python3 -m pip install --break-system-packages pyyaml 2>/dev/null || pip3 install pyyaml
+      
+      - name: 安裝 Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+      
+      - name: Fetch sources
+        run: ./scripts/fetch_sources.sh
+      
+      - name: 構建基礎依賴
+        run: ./scripts/build_ios.sh libffi glib pixman libucontext libslirp
+      
+      - name: 準備 cross 文件
+        run: cp build/ios-arm64/cross-darwin.meson build/ios-arm64/cross-ios-darwin.meson
+      
+      - name: 構建 ANGLE
+        run: |
+          if [ ! -f build/ios-arm64/sysroot/lib/libANGLE-shared.dylib ]; then
+            ./scripts/build_angle_ios.sh
+          fi
+      
+      - name: 構建 GPU (virglrenderer)
+        run: |
+          if [ ! -f build/ios-arm64/sysroot/lib/libvirglrenderer.a ]; then
+            PKG_CONFIG_LIBDIR="$PWD/build/ios-arm64/sysroot/lib/pkgconfig:$PWD/build/ios-arm64/sysroot/share/pkgconfig" \
+              ./scripts/build_gpu_ios.sh
+          fi
+      
+      - name: 構建 QEMU
+        run: ./scripts/build_ios.sh qemu
+      
+      - name: 集成 Husk 補丁並重編
+        run: |
+          ./scripts/integrate_husk.sh
+          ./scripts/build_ios.sh qemurebuild
+      
+      - name: 下載 Guest 鏡像
+        run: ./scripts/fetch_phase0_guest.sh
+      
+      - name: 構建 MoltenVK
+        run: |
+          if [ ! -d build/ios-arm64/lib/MoltenVK.xcframework ]; then
+            ./scripts/build_moltenvk_ios.sh
+          fi
+      
+      - name: 構建 Rust pairing
+        run: ./scripts/build_rppairing_ios.sh
+      
+      - name: 清理 Xcode 緩存
+        run: |
+          xcodebuild -project src/app/Husk.xcodeproj -scheme Husk clean || true
+      
       - name: 打包 IPA
         run: |
-          mkdir -p Payload
-          cp -r build/Build/Products/Release-iphoneos/Husk-iOS15.app Payload/
-          zip -r Husk-iOS15.ipa Payload/
-          
+          mkdir -p build
+          ./scripts/package_ipa.sh build/Husk.ipa
+          ls -lh build/Husk.ipa
+      
       - name: 上傳 IPA
         uses: actions/upload-artifact@v4
         with:
-          name: husk-ios15-ipa
-          path: Husk-iOS15.ipa
+          name: husk-ipa
+          path: build/Husk.ipa
+          retention-days: 7
+      
+      - name: 上傳日誌
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: build/logs/
+          retention-days: 7
