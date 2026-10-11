@@ -17,12 +17,8 @@ struct FilesTab: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        NavigationStack(path: $router.files) {
-            DirectoryView(path: Self.root, title: "Files")
-                .navigationDestination(for: String.self) { path in
-                    DirectoryView(path: path,
-                                  title: (path as NSString).lastPathComponent)
-                }
+        NavigationView {
+            DirectoryView(path: router.files.first ?? Self.root, title: "Files")
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
                 }
@@ -81,7 +77,6 @@ struct DirectoryView: View {
         }
         .sheet(isPresented: $showImportSheet) {
             ImportSheet(destination: path) { showImportSheet = false; importing = true }
-                .presentationDetents([.height(340)])
         }
         .huskFilePicker(isPresented: $importing) { urls in
             host.sendFiles(urls, to: path)
@@ -104,7 +99,7 @@ struct DirectoryView: View {
 
     @ViewBuilder private func row(_ e: AndroidHost.GuestEntry) -> some View {
         if e.isDirectory {
-            NavigationLink(value: e.path) {
+            NavigationLink(destination: DirectoryView(path: e.path, title: e.name)) {
                 fileLabel(icon: "folder.fill", tint: .accentColor, title: e.name,
                           subtitle: e.modified.map(Self.when))
             }
@@ -214,7 +209,7 @@ struct ImportSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        NavigationStack {
+        NavigationView {
             VStack(spacing: 18) {
                 VStack(spacing: 10) {
                     Image(systemName: "doc.badge.plus")

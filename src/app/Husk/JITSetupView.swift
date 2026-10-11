@@ -13,26 +13,24 @@ struct JITSetupFlow: View {
 
     @ObservedObject private var jit = JITCoordinator.shared
     @ObservedObject private var pairing = OnDevicePairing.shared
-    @State private var path: [Step] = []
+    @State private var selection: Step? = nil
     @State private var importing = false
     @Environment(\.dismiss) private var dismiss
 
     private var device: String { OnDevicePairing.deviceKind }
 
     var body: some View {
-        NavigationStack(path: $path) {
+        NavigationView {
             choose
-                .navigationDestination(for: Step.self) { step in
-                    switch step {
-                    case .pairOnDevice: pairOnDevice
-                    case .importFile: importFile
-                    case .connect: connect
-                    case .enable: enable
-                    case .stikDebug: stikDebug
-                    case .trollStore: trollStore
-                    case .jailbreak: jailbreak
+                .background(
+                    Group {
+                        NavigationLink(destination: pairOnDevice, tag: Step.pairOnDevice, selection: $selection) { EmptyView() }
+                        NavigationLink(destination: importFile, tag: Step.importFile, selection: $selection) { EmptyView() }
+                        NavigationLink(destination: stikDebug, tag: Step.stikDebug, selection: $selection) { EmptyView() }
+                        NavigationLink(destination: trollStore, tag: Step.trollStore, selection: $selection) { EmptyView() }
+                        NavigationLink(destination: jailbreak, tag: Step.jailbreak, selection: $selection) { EmptyView() }
                     }
-                }
+                )
         }
         .tint(Theme.accent)
         .fileImporter(isPresented: $importing, allowedContentTypes: [.propertyList, .data]) { result in
@@ -47,7 +45,7 @@ struct JITSetupFlow: View {
             pairing.reset()
             // A failed enable from the Library lands on the step that can fix it.
             if jit.error != nil, jit.hasPairing, jit.resolvedMethod == .builtIn {
-                path = [.enable]
+                selection = .enable
             }
             HuskLog.log("ui", "JIT walkthrough opened")
         }
@@ -74,28 +72,28 @@ struct JITSetupFlow: View {
                         : jit.pairingSource == .onDevice ? "Paired on this \(device)."
                         : "No computer needed. Pairs from Settings in a minute."),
                     done: jit.pairingSource == .onDevice,
-                    enabled: builtIn == nil && OnDevicePairing.isSupported) { path.append(.pairOnDevice) }
+                    enabled: builtIn == nil && OnDevicePairing.isSupported) { selection = .pairOnDevice }
                 way("Use a pairing file", symbol: "doc.badge.plus",
                     detail: builtIn ?? (jit.pairingSource == .imported ? "Pairing file imported."
                         : "Import a pairing file made on a computer."),
                     done: jit.pairingSource == .imported,
-                    enabled: builtIn == nil) { path.append(.importFile) }
+                    enabled: builtIn == nil) { selection = .importFile }
                 way("Use StikDebug", symbol: "ant",
                     detail: JITBootstrap.isStikDebugInstalled ? "StikDebug is installed."
                         : "Enable JIT through the StikDebug app.",
-                    done: jit.method == .stikDebug) { path.append(.stikDebug) }
+                    done: jit.method == .stikDebug) { selection = .stikDebug }
                 way("Use TrollStore", symbol: "sparkles",
                     detail: JITBootstrap.isTrollStoreInstalled ? "TrollStore is installed."
                         : "For a Husk installed through TrollStore.",
-                    done: jit.method == .trollStore) { path.append(.trollStore) }
+                    done: jit.method == .trollStore) { selection = .trollStore }
                 way("Use a jailbreak", symbol: "lock.open",
                     detail: JITBootstrap.debuggedAtLaunch ? "JIT was already on when Husk opened."
                         : JITBootstrap.isJailbroken ? "A jailbreak was found. Turn on Allow JIT in Apps."
                         : "Dopamine can give every app JIT with one setting.",
-                    done: jit.method == .jailbreak || JITBootstrap.debuggedAtLaunch) { path.append(.jailbreak) }
+                    done: jit.method == .jailbreak || JITBootstrap.debuggedAtLaunch) { selection = .jailbreak }
             }
             if jit.hasPairing && HuskBuiltInJIT.isAvailable {
-                Button { path.append(.connect) } label: {
+                Button { selection = .connect } label: {
                     Label("Continue with the current pairing", systemImage: "arrow.right")
                         .font(.system(size: 14, weight: .semibold))
                 }
@@ -173,10 +171,11 @@ struct JITSetupFlow: View {
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(Theme.textDim)
             case .paired:
-                Button("Continue") { path.append(.connect) }
+                Button("Continue") { selection = .connect }
                     .buttonStyle(PrimaryButtonStyle())
             }
         }
+        .background(NavigationLink(destination: connect, tag: Step.connect, selection: $selection) { EmptyView() })
     }
 
     @ViewBuilder private var pairingStatus: some View {
@@ -241,7 +240,7 @@ struct JITSetupFlow: View {
             if let error = jit.error { outcome(error, ok: false) }
         } actions: {
             if jit.pairingSource == .imported {
-                Button("Continue") { path.append(.connect) }.buttonStyle(PrimaryButtonStyle())
+                Button("Continue") { selection = .connect }.buttonStyle(PrimaryButtonStyle())
                 Button("Choose another file") { importing = true }
                     .font(.system(size: 15, weight: .medium))
             } else {
@@ -249,6 +248,7 @@ struct JITSetupFlow: View {
                     .buttonStyle(PrimaryButtonStyle())
             }
         }
+        .background(NavigationLink(destination: connect, tag: Step.connect, selection: $selection) { EmptyView() })
     }
 
     // MARK: LocalDevVPN
@@ -267,9 +267,10 @@ struct JITSetupFlow: View {
         } actions: {
             Button(LocalDevVPN.actionTitle) { LocalDevVPN.open() }
                 .buttonStyle(PrimaryButtonStyle())
-            Button("It's connected") { path.append(.enable) }
+            Button("It's connected") { selection = .enable }
                 .font(.system(size: 15, weight: .medium))
         }
+        .background(NavigationLink(destination: enable, tag: Step.enable, selection: $selection) { EmptyView() })
     }
 
     // MARK: Enable
@@ -301,7 +302,7 @@ struct JITSetupFlow: View {
                     outcome(error, ok: false)
                     if jit.connectionProblem == .pairing {
                         Button(OnDevicePairing.isSupported ? "Pair again" : "Import a new pairing file") {
-                            path = [OnDevicePairing.isSupported ? .pairOnDevice : .importFile]
+                            selection = (OnDevicePairing.isSupported ? Step.pairOnDevice : Step.importFile)
                         }
                         .font(.system(size: 14, weight: .semibold))
                     }

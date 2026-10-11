@@ -141,7 +141,7 @@ struct HomeView: View {
     private var all: [LibraryItem] { Launcher.byRecent(Launcher.items(store: store, host: host)) }
 
     var body: some View {
-        NavigationStack(path: $router.home) {
+        NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(spacing: 10) {
@@ -186,7 +186,7 @@ struct HomeView: View {
                             .padding(.top, 6)
                         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 4), spacing: 10) {
                             ForEach(rest.prefix(UIDevice.current.userInterfaceIdiom == .pad ? 16 : 8)) { item in
-                                NavigationLink(value: item.route) { LibrarySquare(item: item) }
+                                NavigationLink(destination: LibraryRouteView(route: item.route)) { LibrarySquare(item: item) }
                                     .buttonStyle(CardButtonStyle())
                                     .accessibilityLabel(item.title)
                             }
@@ -200,8 +200,7 @@ struct HomeView: View {
             }
             .scrollIndicators(.hidden)
             .background(Color(uiColor: .systemBackground).ignoresSafeArea())
-            .toolbar(.hidden, for: .navigationBar)
-            .libraryDestinations()
+            .navigationBarHidden(true)
         }
     }
 }
@@ -238,10 +237,11 @@ private struct TileGlyph: View {
 private struct LeadTile: View {
     let item: LibraryItem
     @ObservedObject private var router = Router.shared
+    @State private var showDetail = false
 
     var body: some View {
         VStack(spacing: 0) {
-            NavigationLink(value: item.route) {
+            NavigationLink(destination: LibraryRouteView(route: item.route)) {
                 ItemBackdrop(item: item)
                     .frame(height: 150)
                     .frame(maxWidth: .infinity)
@@ -249,7 +249,7 @@ private struct LeadTile: View {
             }
             .buttonStyle(.plain)
             HStack(spacing: 12) {
-                NavigationLink(value: item.route) {
+                NavigationLink(destination: LibraryRouteView(route: item.route)) {
                     HStack(spacing: 12) {
                         ItemIcon(item: item, size: 40)
                         VStack(alignment: .leading, spacing: 2) {
@@ -282,12 +282,17 @@ private struct LeadTile: View {
         }
         .background(Color(uiColor: .secondarySystemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .background(
+            NavigationLink(destination: LibraryRouteView(route: item.route), isActive: $showDetail) {
+                EmptyView()
+            }
+        )
     }
 
     /// Games start as soon as their page is up; anything else just opens its page.
     private func play() {
         if case .game(let g) = item { router.autoPlay = g.id }
-        router.home.append(item.route)
+        showDetail = true
     }
 }
 
@@ -373,7 +378,7 @@ private struct AndroidTile: View {
     var body: some View {
         Tile(padding: 14) {
             HStack(spacing: 12) {
-                NavigationLink(value: LibraryItem.android.route) {
+                NavigationLink(destination: LibraryRouteView(route: LibraryItem.android.route)) {
                     HStack(spacing: 12) {
                         TileGlyph(systemImage: "apps.iphone", color: AndroidMark.green, size: 40)
                         VStack(alignment: .leading, spacing: 2) {
@@ -562,7 +567,7 @@ struct LibraryScreen: View {
     @State private var query = ""
 
     var body: some View {
-        NavigationStack(path: $router.library) {
+        NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack {
@@ -604,8 +609,7 @@ struct LibraryScreen: View {
             .scrollIndicators(.hidden)
             .scrollDismissesKeyboard(.immediately)
             .background(Color(uiColor: .systemBackground).ignoresSafeArea())
-            .toolbar(.hidden, for: .navigationBar)
-            .libraryDestinations()
+            .navigationBarHidden(true)
         }
     }
 
@@ -625,7 +629,7 @@ struct LibraryScreen: View {
                                                  count: UIDevice.current.userInterfaceIdiom == .pad ? 8 : 4),
                                   spacing: 18) {
                             ForEach(items) { item in
-                                NavigationLink(value: item.route) {
+                                NavigationLink(destination: LibraryRouteView(route: item.route)) {
                                     LauncherTile(title: item.title, iconPath: item.iconPath, item: item, caption: caption(item), size: 60)
                                 }
                                 .buttonStyle(CardButtonStyle())
@@ -788,10 +792,9 @@ func matches(_ query: String, _ names: String...) -> Bool {
 
 extension View {
     /// The pages an item opens, for whichever stack shows it.
+    /// iOS 15: destinations are inline in NavigationLink, this is a no-op.
     func libraryDestinations() -> some View {
-        navigationDestination(for: LibraryRoute.self) { route in
-            LibraryRouteView(route: route).toolbar(.visible, for: .navigationBar)
-        }
+        self
     }
 }
 
