@@ -185,9 +185,7 @@ struct GamePage: View {
             Section("About") {
                 HStack { Text("Runs With"); Spacer(); Text(app.report?.runnerName ?? "Unknown") }
                 if let st = GameStatusStore.shared.status(app.id) {
-                    LabeledContent("Last Result") {
-                        Label(st.result.label, systemImage: st.result.symbol).foregroundStyle(st.result.color)
-                    }
+                    HStack { Text("Last Result"); Spacer(); Label(st.result.label, systemImage: st.result.symbol).foregroundStyle(st.result.color) }
                 }
                 HStack { Text("Last Played"); Spacer(); Text(app.lastPlayed.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "Never") }
                 HStack { Text("Size"); Spacer(); Text(fileBytes(app.apks)) }
@@ -476,7 +474,7 @@ struct AndroidSystemPage: View {
                 PageHero(item: .android, subtitle: status) {
                     VStack(spacing: 10) {
                         primary
-                        if let progress { ProgressView(value: progress) }
+                        if let progress { ProgressView(value: progress, total: 1.0) }
                     }
                 }
             } footer: {
