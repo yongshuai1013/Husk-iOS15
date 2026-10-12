@@ -163,8 +163,6 @@ struct ContentView: View {
         .sheet(isPresented: Binding(get: { !incoming.waiting.isEmpty },
                                     set: { if !$0 { incoming.discard() } })) {
             IncomingChooser()
-                
-                .presentationDragIndicator(.visible)
         }
         // APKs meant for Android wait until it can take them.
         .onChange(of: host.isReady) { ready in
@@ -469,7 +467,6 @@ struct GuestScreenView: View {
         // document picker is up, and an importer attached to a view that goes
         // away goes away with it.
         .statusBarHidden(true)
-        .persistentSystemOverlays(.hidden)
         .sheet(isPresented: $showControls) {
             ControlsSheet(keyboard: $keyboard)
         }
