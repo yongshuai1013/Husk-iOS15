@@ -207,15 +207,16 @@ struct DiscoverView: View {
                     Button("Cancel") { newSourceURL = ""; showingAddSource = false }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Add") {
+                    Button {
                         let url = newSourceURL
                         newSourceURL = ""
                         showingAddSource = false
                         guard !url.isEmpty, URL(string: url) != nil else { return }
                         Task { await manager.addSource(urlString: url) }
+                    } label: {
+                        Text("Add").fontWeight(.bold)
                     }
                     .disabled(newSourceURL.isEmpty)
-                    .fontWeight(.bold)
                 }
             }
         }
