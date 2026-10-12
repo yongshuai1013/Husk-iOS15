@@ -3,7 +3,7 @@ import AVFoundation
 import BackgroundTasks
 import Foundation
 import UIKit
-#if canImport(ActivityKit)
+#if false // ActivityKit unavailable on iOS 15
 import ActivityKit
 
 // MARK: - iOS 15 兼容：避免 Swift 6 URLRequest overlay 符號缺失
@@ -694,18 +694,18 @@ enum LiveDownload {
     static func update(jobs: [Downloads.Job], speed: Double) {
         if #available(iOS 26.0, *), ContinuedDownload.update(jobs: jobs, speed: speed) {
             // The system's own progress is showing; Husk's Live Activity would only repeat it.
-            #if canImport(ActivityKit)
+            #if false // ActivityKit unavailable on iOS 15
             if #available(iOS 16.1, *) { Live.end() }
             #endif
             return
         }
-        #if canImport(ActivityKit)
+        #if false // ActivityKit unavailable on iOS 15
         if #available(iOS 16.1, *) { Live.update(jobs: jobs, speed: speed) }
         #endif
     }
 }
 
-#if canImport(ActivityKit)
+#if false // ActivityKit unavailable on iOS 15
 @available(iOS 16.1, *)
 @MainActor
 private enum Live {

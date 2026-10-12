@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 import Foundation
-#if canImport(ActivityKit)
+#if false // ActivityKit unavailable on iOS 15
 import ActivityKit
 
 /// The Live Activity a download shows on the Lock Screen and in the Dynamic Island. Compiled into the app, which starts and updates
