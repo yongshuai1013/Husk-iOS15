@@ -198,7 +198,6 @@ struct HomeView: View {
                 .padding(.bottom, 32)
                 .id(jit.attachGeneration)
             }
-            .scrollIndicators(.hidden)
             .background(Color(uiColor: .systemBackground).ignoresSafeArea())
             .navigationBarHidden(true)
         }
@@ -540,7 +539,7 @@ struct AndroidMark: View {
             .font(.system(size: size * 0.46, weight: .semibold))
             .foregroundStyle(.white)
             .frame(width: size, height: size)
-            .background(Self.green.gradient, in: RoundedRectangle(cornerRadius: size * 0.225, style: .continuous))
+            .background(Self.green, in: RoundedRectangle(cornerRadius: size * 0.225, style: .continuous))
     }
 }
 
@@ -606,8 +605,6 @@ struct LibraryScreen: View {
                 .padding(.top, 8)
                 .padding(.bottom, 32)
             }
-            .scrollIndicators(.hidden)
-            .scrollDismissesKeyboard(.immediately)
             .background(Color(uiColor: .systemBackground).ignoresSafeArea())
             .navigationBarHidden(true)
         }
