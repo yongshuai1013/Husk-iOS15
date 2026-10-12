@@ -59,7 +59,7 @@ else
 fi
 
 echo "==> building"
-xcodebuild -project "$HUSK_ROOT/src/app/Husk.xcodeproj" -scheme Husk \
+xcodebuild -project "$HUSK_ROOT/Husk-iOS15.xcodeproj" -scheme Husk-iOS15 \
     -sdk iphoneos -configuration Release -derivedDataPath "$DD" \
     CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
     build 2>&1 | tee "$DD/build.log" | grep -E "error:|BUILD (SUCCEEDED|FAILED)" || true
