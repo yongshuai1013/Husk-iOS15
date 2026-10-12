@@ -34,9 +34,6 @@ targets:
         includes:
           - "**/*.swift"
 
-      - path: src/app/HuskDownloadsWidget
-        includes:
-          - "**/*.swift"
       - path: src/app/Shared
         includes:
           - "**/*.swift"
