@@ -165,6 +165,7 @@ struct CrashReportSheet: View {
     let report: CrashReport.Report
     @Environment(\.dismiss) private var dismiss
     @State private var file: URL?
+    @State private var sharing = false
 
     var body: some View {
         NavigationView {
@@ -193,11 +194,16 @@ struct CrashReportSheet: View {
                     }
 
                     if let file {
-                        ShareLink(item: file) {
+                        Button {
+                            sharing = true
+                        } label: {
                             Label("Share Report", systemImage: "square.and.arrow.up")
                                 .frame(maxWidth: .infinity).padding(.vertical, 6)
                         }
                         .buttonStyle(.borderedProminent)
+                        .sheet(isPresented: $sharing) {
+                            ShareSheet(items: [file])
+                        }
                     }
                     Text("The report holds the full log of that run and which device and build it was on. Nothing is sent anywhere unless you share it.")
                         .font(.footnote).foregroundStyle(.secondary)
