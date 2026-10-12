@@ -59,7 +59,7 @@ else
 fi
 
 echo "==> building"
-xcodebuild -project "$HUSK_ROOT/Husk-iOS15.xcodeproj" -scheme Husk-iOS15 \
+xcodebuild -project "$HUSK_ROOT/src/app/Husk.xcodeproj" -scheme Husk \
     -sdk iphoneos -configuration Release -derivedDataPath "$DD" \
     CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
     build 2>&1 | tee "$DD/build.log" | grep -E "error:|BUILD (SUCCEEDED|FAILED)" || true
@@ -76,6 +76,13 @@ fi
 
 APP="$DD/Build/Products/Release-iphoneos/Husk.app"
 [ -d "$APP" ] || { echo "no app bundle at $APP" >&2; exit 1; }
+
+# HuskDownloadsWidget 需要 ActivityKit（iOS 16.1+），在 iOS 15 上啟動即閃退。
+# 舊工程會把它編進 PlugIns，這裡在打包前直接刪掉，主 App 不受影響。
+if [ -d "$APP/PlugIns/HuskDownloadsWidget.appex" ]; then
+    echo "==> removing iOS 16-only DownloadsWidget (crashes on iOS 15)"
+    rm -rf "$APP/PlugIns/HuskDownloadsWidget.appex"
+fi
 
 # Stamp the build's identity into the bundle so its logs can name themselves.
 # A log from a stale install is otherwise indistinguishable from a log proving a
@@ -142,10 +149,9 @@ for f in vmlinuz-virt initramfs-virt husk-jit.js \
 done
 
 # Built-in StikJIT's helper (without it the app still installs and runs with
-# StikDebug, but its JIT setup would offer a method that can only fail), and the
-# widget that draws the download Live Activity.
+# StikDebug, but its JIT setup would offer a method that can only fail).
+# (HuskDownloadsWidget 已在上方刪除：它要 ActivityKit，iOS 15 必閃退。)
 for f in "$APP/PlugIns/HuskJITHelper.appex/HuskJITHelper" \
-         "$APP/PlugIns/HuskDownloadsWidget.appex/HuskDownloadsWidget" \
          "$APP/Frameworks/StikJIT.framework/StikJIT" \
          "$APP/Frameworks/StikJIT.framework/Info.plist"; do
     if [ ! -f "$f" ]; then
