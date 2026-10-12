@@ -165,7 +165,6 @@ struct ShowcaseGallery: View {
                     }
                 }
             }
-            .scrollIndicators(.hidden)
             .fullScreenCover(item: Binding(get: { shown.map(ShownPicture.init) }, set: { shown = $0?.path })) { picture in
                 ZStack(alignment: .topTrailing) {
                     Color.black.ignoresSafeArea()
