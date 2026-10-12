@@ -138,13 +138,13 @@ struct TLTechnicalView: View {
     }
 
     private func row(_ label: String, _ value: String, mono: Bool = false) -> some View {
-        LabeledContent {
+        HStack {
+            Text(label).lineLimit(2)
+            Spacer()
             Text(value)
                 .font(mono ? .system(.footnote, design: .monospaced) : .body)
                 .multilineTextAlignment(.trailing)
                 .textSelection(.enabled)
-        } label: {
-            Text(label).lineLimit(2)
         }
     }
 
