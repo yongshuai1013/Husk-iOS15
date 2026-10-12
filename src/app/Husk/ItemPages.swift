@@ -159,10 +159,10 @@ struct GamePage: View {
             }
 
             Section {
-                NavigationLink(value: LibraryRoute.gameSettings(app.id)) {
+                NavigationLink(destination: TLAppSettingsView(app: app)) {
                     Label("Game Settings", systemImage: "slider.horizontal.3")
                 }
-                NavigationLink(value: LibraryRoute.gameReport(app.id)) {
+                NavigationLink(destination: TLTechnicalView(app: app)) {
                     Label("Technical Details", systemImage: "cpu")
                 }
             }
@@ -435,7 +435,7 @@ struct AndroidAppPage: View {
                 router.startAndroid()
             }
         } else {
-            NavigationLink(value: LibraryRoute.androidSystem) {
+            NavigationLink(destination: AndroidSystemPage()) {
                 Label("Get Android First", systemImage: "arrow.down.circle")
                     .font(.system(.headline, design: .rounded))
                     .frame(maxWidth: .infinity).frame(height: 50)
