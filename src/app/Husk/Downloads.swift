@@ -5,8 +5,9 @@ import Foundation
 import UIKit
 #if false // ActivityKit unavailable on iOS 15
 import ActivityKit
+#endif
 
-// MARK: - iOS 15 兼容：避免 Swift 6 URLRequest overlay 符號缺失
+// MARK: - iOS 15 兼容：避免 Swift 6 URLRequest overlay 符號缺失（通用工具，與 ActivityKit 無關，不禁用）
 fileprivate func makeURLRequest(url: URL, method: String? = nil, cachePolicy: NSURLRequest.CachePolicy? = nil, timeoutInterval: TimeInterval? = nil, httpBody: Data? = nil) -> URLRequest {
     let m = NSMutableURLRequest(url: url)
     if let method = method { m.httpMethod = method }
@@ -17,12 +18,10 @@ fileprivate func makeURLRequest(url: URL, method: String? = nil, cachePolicy: NS
 }
 
 
-// 替代 CocoaError，避免 iOS 15 符號缺失
+// 替代 CocoaError，避免 iOS 15 符號缺失（通用類型，與 ActivityKit 無關，不禁用）
 enum DownloadFileError: Error {
     case fileWriteUnknown
 }
-
-#endif
 
 /// Downloads from a link: one file, or a whole folder served from a computer (tools/serve-folder.py).
 ///
