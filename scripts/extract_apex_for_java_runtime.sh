@@ -87,22 +87,29 @@ EOF
 
 # 3. 從 system.img 提取 apex capex 文件
 echo "==> 提取 APEX capex 文件..."
-echo "==> 列出 /system/apex/ 實際內容:"
-"$DEBUGFS" -R "ls /system/apex" "$WORK/system.img" 2>&1 | head -20
 mkdir -p "$WORK/capex"
+# 注意：i18n 是 .apex 不是 .capex，兩種都試
 for apex in com.android.art com.android.i18n com.android.tzdata com.android.conscrypt; do
-  echo "  - $apex.capex"
-  "$DEBUGFS" -R "dump /system/apex/$apex.capex $WORK/capex/$apex.capex" "$WORK/system.img" 2>&1 | head -3 || echo "    (未找到 $apex.capex)"
-  ls -lh "$WORK/capex/$apex.capex" 2>&1 | head -1 || echo "    (文件未生成)"
+  for ext in capex apex; do
+    echo "  - $apex.$ext"
+    if "$DEBUGFS" -R "dump /system/apex/$apex.$ext $WORK/capex/$apex.$ext" "$WORK/system.img" 2>&1 | head -3; then
+      if [ -f "$WORK/capex/$apex.$ext" ]; then
+        echo "    (成功提取 $apex.$ext)"
+        break
+      fi
+    fi
+  done
+  ls -lh "$WORK/capex/$apex".* 2>&1 | head -2 || echo "    (未找到 $apex)"
 done
 
-# 4. 解壓每個 capex 並提取文件
+# 4. 解壓每個 capex/apex 並提取文件
 echo "==> 解壓 APEX..."
 mkdir -p "$OUT"
-for capex in "$WORK"/capex/*.capex; do
+for capex in "$WORK"/capex/*.capex "$WORK"/capex/*.apex; do
   [ -f "$capex" ] || continue
-  name=$(basename "$capex" .capex)
-  echo "  - $name"
+  # 去掉 .capex 或 .apex 後綴
+  name=$(basename "$capex" | sed 's/\.\(capex\|apex\)$//')
+  echo "  - $name ($(basename "$capex"))"
   # capex 是 ZIP，內有 apex_payload.img（ext4）
   echo "    [debug] 檢查 capex 內容..."
   python3 - "$capex" "$WORK/$name.img" <<'EOF'
