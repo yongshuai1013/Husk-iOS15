@@ -466,7 +466,7 @@ struct GuestScreenView: View {
         // On the screen rather than the button: the chrome can hide while the
         // document picker is up, and an importer attached to a view that goes
         // away goes away with it.
-        .statusBarHidden(true)
+        .statusBarHidden(false)
         .sheet(isPresented: $showControls) {
             ControlsSheet(keyboard: $keyboard)
         }

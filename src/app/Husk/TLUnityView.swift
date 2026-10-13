@@ -783,7 +783,7 @@ struct TLCocosAttemptView: View {
                 .transition(.opacity)
             }
         }
-        .statusBarHidden(true)
+        .statusBarHidden(false)
         // Swipes near the edges are the game's.
         .onAppear {
             HuskOrientation.set(portrait ? .portrait : .landscape)

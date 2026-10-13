@@ -377,6 +377,29 @@ final class GuestImage: ObservableObject {
         }
     }
 
+    /// 檢測手動拷入的鏡像（用戶通過文件 App 把 vda-v12.qcow2 放到 Documents 下）
+    func detectManualCopy() {
+        if case .downloading = state { return }
+        if case .installing = state { return }
+
+        guard FileManager.default.fileExists(atPath: diskPath) else {
+            state = .failed("Documents 下找不到 lineage-vda.qcow2，請先用文件 App 把鏡像拷進來。")
+            return
+        }
+
+        let check = Self.validate(path: diskPath)
+        if let why = check.problem {
+            HuskLog.log("guest", "manually placed image INVALID (\(why))")
+            state = .failed("拷入的鏡像無效 (\(why))，請重新下載。")
+            return
+        }
+
+        // 寫版本戳，標記為已安裝
+        try? Self.imageVersion.write(toFile: versionStampPath, atomically: true, encoding: .utf8)
+        HuskLog.log("guest", "manual image detected and valid: \(check.size ?? 0) bytes")
+        state = .ready
+    }
+
     /// Create the UEFI variable store beside the bundled firmware.
     ///
     /// The firmware itself ships raw in the app bundle. It is 64 MiB, but almost

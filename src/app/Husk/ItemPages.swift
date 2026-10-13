@@ -555,10 +555,15 @@ struct AndroidSystemPage: View {
         } else {
             switch guest.state {
             case .missing:
-                BigButton(title: "Download Android", systemImage: "arrow.down.circle") {
-                    // Claim the JIT region before the download: it takes a while, and StikDebug lets go by the end of it.
-                    JITBootstrap.prewarm()
-                    guest.download()
+                VStack(spacing: 10) {
+                    BigButton(title: "Download Android", systemImage: "arrow.down.circle") {
+                        // Claim the JIT region before the download: it takes a while, and StikDebug lets go by the end of it.
+                        JITBootstrap.prewarm()
+                        guest.download()
+                    }
+                    BigButton(title: "檢測已拷入的鏡像", systemImage: "magnifyingglass", prominent: false) {
+                        guest.detectManualCopy()
+                    }
                 }
             case .downloading:
                 BigButton(title: "Cancel Download", systemImage: "xmark", prominent: false) { guest.cancel() }

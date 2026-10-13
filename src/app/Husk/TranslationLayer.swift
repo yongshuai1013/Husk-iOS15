@@ -821,7 +821,7 @@ struct TLClassicAttemptView: View {
                 .transition(.opacity)
             }
         }
-        .statusBarHidden(true)
+        .statusBarHidden(false)
         .onAppear {
             HuskOrientation.set(portrait ? .portrait : .landscape)
             UIApplication.shared.isIdleTimerDisabled = settings.keepAwake
