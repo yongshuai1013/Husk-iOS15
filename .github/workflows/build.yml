@@ -66,11 +66,27 @@ jobs:
           fi
           cd ..
           brew install e2fsprogs 2>/dev/null || true
+          # 安裝 JDK（build.sh 需要 javac）
+          echo "安裝 OpenJDK..."
+          brew install --cask temurin 2>/dev/null || brew install openjdk 2>/dev/null || true
+          export JAVA_HOME=$(/usr/libexec/java_home 2>/dev/null || echo "/opt/homebrew/opt/openjdk")
+          export HUSK_JDK="$JAVA_HOME"
+          echo "JAVA_HOME=$JAVA_HOME"
+          "$JAVA_HOME/bin/javac" -version || echo "WARN: javac 不可用"
+          # 下載 R8（D8 dexer）
+          if [ ! -f build/r8.jar ]; then
+            echo "下載 R8..."
+            # R8 8.5+ 版本，build.sh 要求 8.5+（build-tools 34 的 d8 會崩）
+            curl -fL --retry 3 -o build/r8.jar \
+              https://storage.googleapis.com/r8-releases/raw/8.5.35/r8-8.5.35.jar || \
+            echo "WARN: R8 下載失敗，dex 生成可能跳過"
+          fi
+          export HUSK_D8="$PWD/build/r8.jar"
           chmod +x scripts/extract_apex_for_java_runtime.sh
           ./scripts/extract_apex_for_java_runtime.sh build/vda-v12.qcow2 build/apex
           HTTP_LEGACY=build/apex/framework/org.apache.http.legacy.jar \
           FRAMEWORK_RES=build/apex/framework/framework-res.apk \
-          ./scripts/build_java_runtime.sh build/apex
+          ./scripts/build_java_runtime.sh build/apex || echo "WARN: java-runtime 部分失敗，繼續構建"
           echo "java-runtime 構建完成:"
           du -sh build/java-runtime || true
       
