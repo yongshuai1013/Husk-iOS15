@@ -101,18 +101,34 @@ for capex in "$WORK"/capex/*.capex; do
   name=$(basename "$capex" .capex)
   echo "  - $name"
   # capex 是 ZIP，內有 apex_payload.img（ext4）
+  echo "    [debug] 檢查 capex 內容..."
   python3 - "$capex" "$WORK/$name.img" <<'EOF'
 import sys, zipfile
 capex, out = sys.argv[1], sys.argv[2]
 z = zipfile.ZipFile(capex)
+print(f"    [debug] capex 內文件: {z.namelist()[:5]}", file=sys.stderr)
 # 有些 capex 嵌套了一層 original_apex
 if 'original_apex' in z.namelist():
+    print(f"    [debug] 發現嵌套 original_apex", file=sys.stderr)
     z = zipfile.ZipFile(z.open('original_apex'))
-open(out, 'wb').write(z.read('apex_payload.img'))
+    print(f"    [debug] 內層文件: {z.namelist()[:5]}", file=sys.stderr)
+if 'apex_payload.img' not in z.namelist():
+    print(f"    [debug] ERROR: 找不到 apex_payload.img!", file=sys.stderr)
+    sys.exit(1)
+data = z.read('apex_payload.img')
+print(f"    [debug] apex_payload.img 大小: {len(data)} bytes", file=sys.stderr)
+open(out, 'wb').write(data)
 EOF
+  if [ $? -ne 0 ]; then
+    echo "    [debug] Python 解壓失敗，跳過 $name"
+    continue
+  fi
   # 用 debugfs 提取整個 img 到 OUT/<name>/
   mkdir -p "$OUT/$name"
-  "$DEBUGFS" -R "rdump / $OUT/$name" "$WORK/$name.img" 2>/dev/null || echo "    (rdump 失敗)"
+  echo "    [debug] 執行 debugfs rdump..."
+  "$DEBUGFS" -R "rdump / $OUT/$name" "$WORK/$name.img" 2>&1 | head -5 || echo "    (rdump 失敗)"
+  echo "    [debug] rdump 完成，檢查輸出:"
+  ls "$OUT/$name" 2>&1 | head -5 || echo "    (輸出為空)"
 done
 
 # 5. 還需要 system/framework/org.apache.http.legacy.jar 和 framework-res.apk
