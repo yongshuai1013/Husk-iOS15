@@ -53,6 +53,27 @@ jobs:
       - name: 下載 Guest 鏡像
         run: ./scripts/fetch_phase0_guest.sh
       
+      - name: 構建 java-runtime（翻譯層）
+        run: |
+          set -e
+          mkdir -p build
+          cd build
+          IMG=vda-v12.qcow2
+          if [ ! -f "$IMG" ]; then
+            echo "下載 Android 鏡像..."
+            curl -fL --retry 3 -o "$IMG" \
+              https://github.com/Leviidev/Husk/releases/download/lineage-v2/vda-v12.qcow2
+          fi
+          cd ..
+          brew install e2fsprogs 2>/dev/null || true
+          chmod +x scripts/extract_apex_for_java_runtime.sh
+          ./scripts/extract_apex_for_java_runtime.sh build/vda-v12.qcow2 build/apex
+          HTTP_LEGACY=build/apex/framework/org.apache.http.legacy.jar \
+          FRAMEWORK_RES=build/apex/framework/framework-res.apk \
+          ./scripts/build_java_runtime.sh build/apex
+          echo "java-runtime 構建完成:"
+          du -sh build/java-runtime || true
+      
       - name: 構建 MoltenVK
         run: |
           if [ ! -d build/ios-arm64/lib/MoltenVK.xcframework ]; then
