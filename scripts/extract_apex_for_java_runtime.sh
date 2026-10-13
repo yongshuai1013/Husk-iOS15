@@ -87,10 +87,13 @@ EOF
 
 # 3. 從 system.img 提取 apex capex 文件
 echo "==> 提取 APEX capex 文件..."
+echo "==> 列出 /system/apex/ 實際內容:"
+"$DEBUGFS" -R "ls /system/apex" "$WORK/system.img" 2>&1 | head -20
 mkdir -p "$WORK/capex"
 for apex in com.android.art com.android.i18n com.android.tzdata com.android.conscrypt; do
   echo "  - $apex.capex"
-  "$DEBUGFS" -R "dump /system/apex/$apex.capex $WORK/capex/$apex.capex" "$WORK/system.img" 2>/dev/null || echo "    (未找到 $apex.capex)"
+  "$DEBUGFS" -R "dump /system/apex/$apex.capex $WORK/capex/$apex.capex" "$WORK/system.img" 2>&1 | head -3 || echo "    (未找到 $apex.capex)"
+  ls -lh "$WORK/capex/$apex.capex" 2>&1 | head -1 || echo "    (文件未生成)"
 done
 
 # 4. 解壓每個 capex 並提取文件
