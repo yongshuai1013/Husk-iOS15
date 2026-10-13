@@ -8,13 +8,29 @@ R="$(cd "$(dirname "$0")/.." && pwd)"
 APEX="${1:-/Volumes/GTAV/husk2/root/apex}"
 OUT="$R/build/java-runtime"
 rm -rf "$OUT"; mkdir -p "$OUT"
-copy() { mkdir -p "$OUT/$(dirname "$1")"; cp "$APEX/$1" "$OUT/$1"; }
+copy() { 
+  if [ -f "$APEX/$1" ]; then
+    mkdir -p "$OUT/$(dirname "$1")"; cp "$APEX/$1" "$OUT/$1"
+  else
+    echo "WARN: $1 not found, skipping"
+  fi
+}
 for j in core-oj core-libart okhttp bouncycastle apache-xml; do copy com.android.art/javalib/$j.jar; done
 for l in libandroidio libbase libc++ libexpat libjavacore libnativehelper libopenjdk; do copy com.android.art/lib64/$l.so; done
 copy com.android.i18n/javalib/core-icu4j.jar
 for l in libicu libicui18n libicuuc libicu_jni libandroidicu; do [ -f "$APEX/com.android.i18n/lib64/$l.so" ] && copy com.android.i18n/lib64/$l.so; done
-mkdir -p "$OUT/com.android.i18n/etc"; cp -R "$APEX/com.android.i18n/etc/icu" "$OUT/com.android.i18n/etc/"
-mkdir -p "$OUT/com.android.tzdata"; cp -R "$APEX/com.android.tzdata/etc" "$OUT/com.android.tzdata/"
+mkdir -p "$OUT/com.android.i18n/etc"
+if [ -d "$APEX/com.android.i18n/etc/icu" ]; then
+  cp -R "$APEX/com.android.i18n/etc/icu" "$OUT/com.android.i18n/etc/"
+else
+  echo "WARN: com.android.i18n/etc/icu not found, skipping"
+fi
+mkdir -p "$OUT/com.android.tzdata"
+if [ -d "$APEX/com.android.tzdata/etc" ]; then
+  cp -R "$APEX/com.android.tzdata/etc" "$OUT/com.android.tzdata/"
+else
+  echo "WARN: com.android.tzdata/etc not found, skipping"
+fi
 copy com.android.conscrypt/javalib/conscrypt.jar
 # conscrypt's natives (HTTPS for Java code): its JNI library and the BoringSSL it links
 for l in libjavacrypto libcrypto libssl; do copy com.android.conscrypt/lib64/$l.so; done
