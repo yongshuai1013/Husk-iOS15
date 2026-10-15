@@ -75,7 +75,7 @@ final class JavaRuntime: ObservableObject {
         var output = Data()
         try data.withUnsafeBytes { (srcPtr: UnsafeRawBufferPointer) in
             guard let srcBase = srcPtr.baseAddress else { return }
-            var stream = compression_stream()
+            var stream = compression_stream(dst_ptr: nil, dst_size: 0, src_ptr: nil, src_size: 0, state: nil)
             var status = compression_stream_init(&stream, COMPRESSION_STREAM_DECODE, COMPRESSION_ZLIB)
             guard status != COMPRESSION_STATUS_ERROR else {
                 throw NSError(domain: "JavaRuntime", code: 1, userInfo: [NSLocalizedDescriptionKey: "解壓初始化失敗"])
