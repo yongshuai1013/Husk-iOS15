@@ -16,6 +16,7 @@ final class JavaRuntime: ObservableObject {
     }
     
     @Published private(set) var state: State = .missing
+    @Published var downloadProgress: Double = 0.0
     
     /// java-runtime.tar.gz 下載地址
     static let downloadURL = "https://raw.githubusercontent.com/yongshuai1013/Husk-iOS15/main/assets/java-runtime.tar.gz"
@@ -49,7 +50,24 @@ final class JavaRuntime: ObservableObject {
         }
         
         do {
-            let (tempURL, _) = try await URLSession.shared.download(from: url)
+            let config = URLSessionConfiguration.default
+            config.timeoutIntervalForRequest = 300
+            config.timeoutIntervalForResource = 600
+            let session = URLSession(configuration: config)
+            let (bytes, response) = try await session.bytes(from: url)
+            let total = response.expectedContentLength
+            var data = Data()
+            data.reserveCapacity(Int(total > 0 ? total : 40_000_000))
+            for try await byte in bytes {
+                data.append(byte)
+                if total > 0 {
+                    await MainActor.run {
+                        self.downloadProgress = Double(data.count) / Double(total)
+                    }
+                }
+            }
+            let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("java-runtime.tar.gz")
+            try data.write(to: tempURL)
             let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
             try Self.extractTarGz(tempURL, to: docs)
             state = .ready
