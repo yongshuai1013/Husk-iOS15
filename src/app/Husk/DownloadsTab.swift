@@ -80,7 +80,13 @@ struct DownloadsTab: View {
                     Spacer()
                     switch javaRuntime.state {
                     case .downloading:
-                        ProgressView().frame(width: 100)
+                        HStack {
+                            ProgressView(value: javaRuntime.downloadProgress)
+                                .frame(width: 80)
+                            Text("\(Int(javaRuntime.downloadProgress * 100))%")
+                                .font(.caption)
+                                .frame(width: 35)
+                        }
                     case .failed:
                         Button("Retry") {
                             Task { _ = await javaRuntime.ensureAvailable() }
