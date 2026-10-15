@@ -79,9 +79,9 @@ struct DownloadsTab: View {
                     Label("Java Runtime", systemImage: "cup.and.saucer.fill")
                     Spacer()
                     switch javaRuntime.state {
-                    case .downloading(let progress):
-                        ProgressView(value: progress).frame(width: 100)
-                    case .failed(let msg):
+                    case .downloading:
+                        ProgressView().frame(width: 100)
+                    case .failed:
                         Button("Retry") {
                             Task { _ = await javaRuntime.ensureAvailable() }
                         }.buttonStyle(.bordered)
