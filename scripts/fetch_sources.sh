@@ -11,7 +11,7 @@ fetch() {
     local url="$1" file="$DL/$(basename "$1")"
     if [ -s "$file" ]; then echo "[skip] $(basename "$file")"; return 0; fi
     echo "[get ] $(basename "$file")"
-    curl -fL --retry 3 --retry-delay 5 -o "$file.part" "$url" || { echo "[FAIL] $url"; return 1; }
+    curl -fL --retry 10 --retry-delay 10 --retry-all-errors --retry-max-time 300 -o "$file.part" "$url" || { echo "[FAIL] $url"; return 1; }
     mv "$file.part" "$file"
 }
 
