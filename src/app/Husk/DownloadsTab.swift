@@ -6,6 +6,7 @@ struct DownloadsTab: View {
     @ObservedObject private var downloads = Downloads.shared
     @ObservedObject private var updates = AppUpdates.shared
     @ObservedObject private var guest = GuestImage.shared
+    @ObservedObject private var javaRuntime = JavaRuntime.shared
     @State private var adding = false
     @Environment(\.dismiss) private var dismiss
 
@@ -73,7 +74,25 @@ struct DownloadsTab: View {
                     Button("Download") { guest.applyUpdate() }.buttonStyle(.bordered)
                 }
             }
-            if updates.available == nil && !guest.update.isSomething {
+            if !javaRuntime.isReady {
+                HStack {
+                    Label("Java Runtime", systemImage: "cup.and.saucer.fill")
+                    Spacer()
+                    switch javaRuntime.state {
+                    case .downloading(let progress):
+                        ProgressView(value: progress).frame(width: 100)
+                    case .failed(let msg):
+                        Button("Retry") {
+                            Task { _ = await javaRuntime.ensureAvailable() }
+                        }.buttonStyle(.bordered)
+                    default:
+                        Button("Download") {
+                            Task { _ = await javaRuntime.ensureAvailable() }
+                        }.buttonStyle(.bordered)
+                    }
+                }
+            }
+            if updates.available == nil && !guest.update.isSomething && javaRuntime.isReady {
                 Label("Everything is up to date", systemImage: "checkmark.circle").foregroundStyle(.secondary)
             }
         }
