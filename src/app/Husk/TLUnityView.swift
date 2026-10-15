@@ -301,8 +301,13 @@ final class TLUnityUIView: UIView, UIKeyInput {
             if geode != nil { HuskLog.log("geode", "loading Geode into the game") }
             started = husk_cocos_launch(apk, dataDir, layerPtr, Int32(width), Int32(height), angle, ca)
         case .java:
-            // Husk's Dalvik runtime: libcore, ICU and Husk's Java framework, carried in the app.
-            husk_java_set_runtime((Bundle.main.resourcePath ?? "") + "/java-runtime", Float(contentScaleFactor))
+            // Husk's Dalvik runtime: downloaded to Documents on first use.
+            let javaPath = JavaRuntime.runtimePath
+            // Fallback to bundle for backwards compat (if someone bundled it)
+            let bundlePath = (Bundle.main.resourcePath ?? "") + "/java-runtime"
+            let fm = FileManager.default
+            let runtimeToUse = fm.fileExists(atPath: javaPath + "/com.android.art/javalib/core-oj.jar") ? javaPath : bundlePath
+            husk_java_set_runtime(runtimeToUse, Float(contentScaleFactor))
             husk_java_set_night_mode(traitCollection.userInterfaceStyle == .dark ? 1 : 0)
             // The notch and the home indicator, in surface pixels: the app's window keeps its content out of them.
             if let inset = windowed ? UIEdgeInsets.zero : window?.safeAreaInsets {
