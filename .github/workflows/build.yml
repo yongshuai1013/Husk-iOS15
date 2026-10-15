@@ -120,6 +120,20 @@ jobs:
         with:
           name: husk-ipa
           path: build/Husk.ipa
+      
+      - name: 打包 java-runtime
+        if: always()
+        run: |
+          cd build
+          zip -r -y java-runtime.zip java-runtime || echo "WARN: java-runtime 打包失敗"
+          ls -lh java-runtime.zip || true
+      
+      - name: 上傳 java-runtime
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: java-runtime
+          path: build/java-runtime.zip
           retention-days: 7
       
       - name: 上傳日誌
