@@ -16,9 +16,8 @@ final class JavaRuntime: ObservableObject {
     
     @Published private(set) var state: State = .missing
     
-    /// GitHub release tag holding the java-runtime.zip
-    static let releaseTag = "java-runtime-v1"
-    static let assetName = "java-runtime.zip"
+    /// java-runtime.zip 下載地址（放倉庫 assets 目錄）
+    static let downloadURL = "https://raw.githubusercontent.com/yongshuai1013/Husk-iOS15/main/assets/java-runtime.zip"
     
     /// Path to the java-runtime directory in Documents
     static var runtimePath: String {
@@ -45,8 +44,7 @@ final class JavaRuntime: ObservableObject {
         
         // Download
         state = .downloading(progress: 0)
-        let urlString = "https://github.com/yongshuai1013/Husk-iOS15/releases/download/\(Self.releaseTag)/\(Self.assetName)"
-        guard let url = URL(string: urlString) else {
+        guard let url = URL(string: Self.downloadURL) else {
             state = .failed("URL 錯誤")
             return false
         }
