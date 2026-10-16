@@ -114,10 +114,60 @@ final class JavaRuntime: ObservableObject {
     }
     
     private static func decompressGzip(_ data: Data) throws -> Data {
-        // Use Compression framework
+        // Gzip 格式：先跳過 gzip 頭，取出 deflate 數據
+        // Gzip 頭：2 字節魔數 (1F 8B) + 1 字節方法 + 1 字節標誌 + 4 字節時間 + 1 字節額外標誌 + 1 字節系統 = 10 字節
+        guard data.count > 18 else {
+            throw NSError(domain: "JavaRuntime", code: 3, userInfo: [NSLocalizedDescriptionKey: "文件太小，不是有效的 gzip"])
+        }
+        // 驗證魔數
+        guard data[0] == 0x1F && data[1] == 0x8B else {
+            throw NSError(domain: "JavaRuntime", code: 4, userInfo: [NSLocalizedDescriptionKey: "不是 gzip 格式（魔數不對）"])
+        }
+        let flags = data[3]
+        var headerSize = 10
+        // FEXTRA
+        if flags & 0x04 != 0 {
+            guard data.count > headerSize + 2 else {
+                throw NSError(domain: "JavaRuntime", code: 5, userInfo: [NSLocalizedDescriptionKey: "gzip 頭損壞"])
+            }
+            let xlen = Int(data[headerSize]) | (Int(data[headerSize + 1]) << 8)
+            headerSize += 2 + xlen
+        }
+        // FNAME
+        if flags & 0x08 != 0 {
+            while headerSize < data.count && data[headerSize] != 0 {
+                headerSize += 1
+            }
+            headerSize += 1
+        }
+        // FCOMMENT
+        if flags & 0x10 != 0 {
+            while headerSize < data.count && data[headerSize] != 0 {
+                headerSize += 1
+            }
+            headerSize += 1
+        }
+        // FHCRC
+        if flags & 0x02 != 0 {
+            headerSize += 2
+        }
+        // 去掉尾部 8 字節（CRC32 + ISIZE）
+        guard data.count > headerSize + 8 else {
+            throw NSError(domain: "JavaRuntime", code: 6, userInfo: [NSLocalizedDescriptionKey: "gzip 數據不完整"])
+        }
+        let deflateData = data[headerSize..<(data.count - 8)]
+        
+        // Use Compression framework (zlib 包裝 deflate)
+        // zlib 格式 = 2 字節頭 (78 9C) + deflate 數據 + 4 字節 Adler32
+        // 我們手動構造 zlib 包裝
+        var zlibData = Data([0x78, 0x9C])
+        zlibData.append(contentsOf: deflateData)
+        // Adler32 校驗（簡單起見填 0，解壓時不驗證）
+        zlibData.append(contentsOf: [0, 0, 0, 0])
+        
         let bufferSize = 1024 * 1024
         var output = Data()
-        try data.withUnsafeBytes { (srcPtr: UnsafeRawBufferPointer) in
+        try zlibData.withUnsafeBytes { (srcPtr: UnsafeRawBufferPointer) in
             guard let srcBase = srcPtr.baseAddress else { return }
             // 用 dummy 指針初始化（compression_stream_init 會重寫）
             var dummy: UInt8 = 0
@@ -135,7 +185,7 @@ final class JavaRuntime: ObservableObject {
             defer { compression_stream_destroy(&stream) }
             
             stream.src_ptr = srcBase.assumingMemoryBound(to: UInt8.self)
-            stream.src_size = data.count
+            stream.src_size = zlibData.count
             
             let dstBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
             defer { dstBuffer.deallocate() }
