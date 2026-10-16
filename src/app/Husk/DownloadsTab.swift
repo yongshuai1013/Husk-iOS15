@@ -8,6 +8,7 @@ struct DownloadsTab: View {
     @ObservedObject private var guest = GuestImage.shared
     @ObservedObject private var javaRuntime = JavaRuntime.shared
     @State private var adding = false
+    @State private var importingJavaRuntime = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -55,6 +56,16 @@ struct DownloadsTab: View {
                 }
             }
             .sheet(isPresented: $adding) { AddDownloadSheet() }
+            .fileImporter(isPresented: $importingJavaRuntime, allowedContentTypes: [.gzip], allowsMultipleSelection: false) { result in
+                switch result {
+                case .success(let urls):
+                    if let url = urls.first {
+                        Task { _ = await javaRuntime.importFromFile(url) }
+                    }
+                case .failure(let error):
+                    print("Import failed: \(error)")
+                }
+            }
         }
     }
 
@@ -87,14 +98,25 @@ struct DownloadsTab: View {
                                 .font(.caption)
                                 .frame(width: 35)
                         }
-                    case .failed:
-                        Button("Retry") {
-                            Task { _ = await javaRuntime.ensureAvailable() }
-                        }.buttonStyle(.bordered)
+                    case .failed(let msg):
+                        HStack {
+                            Text(msg).font(.caption).foregroundStyle(.red).lineLimit(2)
+                            Button("Retry") {
+                                Task { _ = await javaRuntime.ensureAvailable() }
+                            }.buttonStyle(.bordered)
+                            Button("Import") {
+                                importingJavaRuntime = true
+                            }.buttonStyle(.bordered)
+                        }
                     default:
-                        Button("Download") {
-                            Task { _ = await javaRuntime.ensureAvailable() }
-                        }.buttonStyle(.bordered)
+                        HStack {
+                            Button("Download") {
+                                Task { _ = await javaRuntime.ensureAvailable() }
+                            }.buttonStyle(.bordered)
+                            Button("Import") {
+                                importingJavaRuntime = true
+                            }.buttonStyle(.bordered)
+                        }
                     }
                 }
             }
