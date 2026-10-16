@@ -78,6 +78,32 @@ final class JavaRuntime: ObservableObject {
         }
     }
     
+    /// Import java-runtime.tar.gz from a local file (e.g. via Files app)
+    func importFromFile(_ fileURL: URL) async -> Bool {
+        state = .downloading
+        downloadProgress = 0
+        do {
+            let accessing = fileURL.startAccessingSecurityScopedResource()
+            defer { if accessing { fileURL.stopAccessingSecurityScopedResource() } }
+            let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+            // Copy to temp first (in case it's not directly readable)
+            let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("java-runtime-import.tar.gz")
+            if FileManager.default.fileExists(atPath: tempURL.path) {
+                try FileManager.default.removeItem(at: tempURL)
+            }
+            try FileManager.default.copyItem(at: fileURL, to: tempURL)
+            await MainActor.run { self.downloadProgress = 0.5 }
+            try Self.extractTarGz(tempURL, to: docs)
+            await MainActor.run { self.downloadProgress = 1.0 }
+            try? FileManager.default.removeItem(at: tempURL)
+            state = .ready
+            return isReady
+        } catch {
+            state = .failed(error.localizedDescription)
+            return false
+        }
+    }
+    
     /// 解壓 tar.gz 到指定目錄
     private static func extractTarGz(_ src: URL, to dst: URL) throws {
         let data = try Data(contentsOf: src)
