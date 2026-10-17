@@ -153,8 +153,8 @@ final class JavaRuntime: ObservableObject {
         
         let bufferSize = 1024 * 1024
         var output = Data()
-        let result: Int32 = zlibData.withUnsafeBytes { srcPtr in
-            guard let srcBase = srcPtr.baseAddress else { return -1 }
+        let success: Bool = zlibData.withUnsafeBytes { srcPtr in
+            guard let srcBase = srcPtr.baseAddress else { return false }
             var dummy: UInt8 = 0
             var stream = compression_stream(
                 dst_ptr: withUnsafeMutablePointer(to: &dummy) { $0 },
@@ -164,7 +164,7 @@ final class JavaRuntime: ObservableObject {
                 state: nil
             )
             guard compression_stream_init(&stream, COMPRESSION_STREAM_DECODE, COMPRESSION_ZLIB) != COMPRESSION_STATUS_ERROR else {
-                return -1
+                return false
             }
             defer { compression_stream_destroy(&stream) }
             stream.src_ptr = srcBase.assumingMemoryBound(to: UInt8.self)
@@ -185,10 +185,10 @@ final class JavaRuntime: ObservableObject {
                     break
                 }
             } while status == COMPRESSION_STATUS_OK
-            return status == COMPRESSION_STATUS_END ? 0 : Int32(status)
+            return status == COMPRESSION_STATUS_END
         }
-        guard result == 0 else {
-            throw NSError(domain: "JavaRuntime", code: 2, userInfo: [NSLocalizedDescriptionKey: "解壓失敗 (\(result))"])
+        guard success else {
+            throw NSError(domain: "JavaRuntime", code: 2, userInfo: [NSLocalizedDescriptionKey: "解壓失敗"])
         }
         return output
     }
