@@ -56,7 +56,7 @@ struct DownloadsTab: View {
                 }
             }
             .sheet(isPresented: $adding) { AddDownloadSheet() }
-            .fileImporter(isPresented: $importingJavaRuntime, allowedContentTypes: [.gzip], allowsMultipleSelection: false) { result in
+            .fileImporter(isPresented: $importingJavaRuntime, allowedContentTypes: [.data], allowsMultipleSelection: false) { result in
                 switch result {
                 case .success(let urls):
                     if let url = urls.first {
