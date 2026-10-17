@@ -303,8 +303,8 @@ final class TLUnityUIView: UIView, UIKeyInput {
         case .java:
             // Husk's Dalvik runtime: downloaded to Documents on first use.
             let javaPath = JavaRuntime.runtimePath
-            // Fallback to bundle for backwards compat (if someone bundled it)
-            let bundlePath = (Bundle.main.resourcePath ?? "") + "/java-runtime"
+            // Fallback to the copy bundled in the IPA (no download needed)
+            let bundlePath = JavaRuntime.bundledRuntimePath
             let fm = FileManager.default
             let runtimeToUse = fm.fileExists(atPath: javaPath + "/com.android.art/javalib/core-oj.jar") ? javaPath : bundlePath
             husk_java_set_runtime(runtimeToUse, Float(contentScaleFactor))
