@@ -27,11 +27,17 @@ final class JavaRuntime: ObservableObject {
         return docs.appendingPathComponent("java-runtime").path
     }
     
+    /// Path to the java-runtime bundled inside the IPA (if the build included it)
+    static var bundledRuntimePath: String {
+        (Bundle.main.resourcePath ?? "") + "/java-runtime"
+    }
+    
     /// Check if runtime is already downloaded
     var isReady: Bool {
         let fm = FileManager.default
-        let path = Self.runtimePath
-        return fm.fileExists(atPath: path + "/com.android.art/javalib/core-oj.jar")
+        let jar = "/com.android.art/javalib/core-oj.jar"
+        return fm.fileExists(atPath: Self.runtimePath + jar) ||
+               fm.fileExists(atPath: Self.bundledRuntimePath + jar)
     }
     
     /// Ensure runtime is available, downloading if needed
