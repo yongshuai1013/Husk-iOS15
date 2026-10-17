@@ -164,6 +164,32 @@ done
 
 [ $rc -eq 0 ] || { echo "==> bundle is not installable; refusing to package" >&2; exit 1; }
 
+# Bundle the Java runtime directly into the app so the device never needs to
+# download or decompress it (both paths kept failing on-device). The app
+# prefers Documents/java-runtime when present, else falls back to this copy.
+# Must run before the ad-hoc codesign below so the files are sealed.
+RUNTIME_ZLIB="$HUSK_ROOT/assets/java-runtime.tar.zlib"
+if [ -f "$RUNTIME_ZLIB" ]; then
+    echo "==> extracting java-runtime into app bundle"
+    python3 - "$RUNTIME_ZLIB" "$APP" <<'PYEOF_INNER'
+import sys, zlib, tarfile, io, os
+zlib_path, app_dir = sys.argv[1], sys.argv[2]
+with open(zlib_path, 'rb') as f:
+    tar_data = zlib.decompress(f.read())
+with tarfile.open(fileobj=io.BytesIO(tar_data)) as t:
+    for m in t.getmembers():
+        if m.name.startswith('/') or '..' in m.name.split('/'):
+            raise SystemExit(f"unsafe tar member: {m.name}")
+    t.extractall(app_dir)
+    count = len(t.getmembers())
+jar = os.path.join(app_dir, "java-runtime/com.android.art/javalib/core-oj.jar")
+assert os.path.isfile(jar), "core-oj.jar missing after extract"
+print(f"==> java-runtime bundled ({count} files)")
+PYEOF_INNER
+else
+    echo "==> WARNING: $RUNTIME_ZLIB not found; java-runtime will not be bundled" >&2
+fi
+
 echo "==> packaging"
 STAGE="$(mktemp -d)"
 mkdir -p "$STAGE/Payload"
