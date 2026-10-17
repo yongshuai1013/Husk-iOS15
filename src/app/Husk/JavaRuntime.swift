@@ -112,8 +112,8 @@ final class JavaRuntime: ObservableObject {
             // zlib 格式：直接解
             tarData = try zlibDecompress(data)
         } else if data.count >= 2 && data[0] == 0x1F && data[1] == 0x8B {
-            // gzip 格式：解析頭後解（盡力）
-            tarData = try gzipDecompress(data)
+            // 舊版 tar.gz 已不再支援，請下載新的 java-runtime.tar.zlib
+            throw NSError(domain: "JavaRuntime", code: 7, userInfo: [NSLocalizedDescriptionKey: "這是舊版 tar.gz，請下載新的 java-runtime.tar.zlib 再導入"])
         } else {
             // 假定已經是原始 tar
             tarData = data
@@ -159,32 +159,6 @@ final class JavaRuntime: ObservableObject {
         return output
     }
 
-    /// gzip 解析頭後轉 zlib 解（舊 tar.gz 兼容）
-    private static func gzipDecompress(_ data: Data) throws -> Data {
-        guard data.count > 18, data[0] == 0x1F, data[1] == 0x8B else {
-            throw NSError(domain: "JavaRuntime", code: 4, userInfo: [NSLocalizedDescriptionKey: "不是 gzip 格式"])
-        }
-        let flags = data[3]
-        var headerSize = 10
-        if flags & 0x04 != 0 {
-            guard data.count > headerSize + 2 else { throw NSError(domain: "JavaRuntime", code: 5, userInfo: [NSLocalizedDescriptionKey: "gzip 頭損壞"]) }
-            headerSize += 2 + Int(data[headerSize]) + (Int(data[headerSize + 1]) << 8)
-        }
-        if flags & 0x08 != 0 {
-            while headerSize < data.count && data[headerSize] != 0 { headerSize += 1 }
-            headerSize += 1
-        }
-        if flags & 0x10 != 0 {
-            while headerSize < data.count && data[headerSize] != 0 { headerSize += 1 }
-            headerSize += 1
-        }
-        if flags & 0x02 != 0 { headerSize += 2 }
-        guard data.count > headerSize + 8 else { throw NSError(domain: "JavaRuntime", code: 6, userInfo: [NSLocalizedDescriptionKey: "gzip 數據不完整"]) }
-        // deflate 段前後加上 zlib 頭尾（Adler32 填 0，盡力解）
-        var zlibData = Data([0x78, 0x9C])
-        zlibData.append(contentsOf: data[headerSize..<(data.count - 8)])
-        return try zlibDecompress(zlibData)
-    }
     
     private static func extractTar(_ data: Data, to dst: URL) throws {
         let fm = FileManager.default
