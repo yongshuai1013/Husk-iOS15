@@ -19,7 +19,7 @@ final class JavaRuntime: ObservableObject {
     @Published var downloadProgress: Double = 0.0
     
     /// java-runtime.tar.gz 下載地址
-    static let downloadURL = "https://raw.githubusercontent.com/yongshuai1013/Husk-iOS15/main/assets/java-runtime.tar.gz"
+    static let downloadURL = "https://raw.githubusercontent.com/yongshuai1013/Husk-iOS15/main/assets/java-runtime.tar.zlib"
     
     /// Path to the java-runtime directory in Documents
     static var runtimePath: String {
@@ -66,10 +66,10 @@ final class JavaRuntime: ObservableObject {
                     }
                 }
             }
-            let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("java-runtime.tar.gz")
+            let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("java-runtime.tar.zlib")
             try data.write(to: tempURL)
             let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-            try Self.extractTarGz(tempURL, to: docs)
+            try Self.extractArchive(tempURL, to: docs)
             state = .ready
             return isReady
         } catch {
@@ -93,7 +93,7 @@ final class JavaRuntime: ObservableObject {
             }
             try FileManager.default.copyItem(at: fileURL, to: tempURL)
             await MainActor.run { self.downloadProgress = 0.5 }
-            try Self.extractTarGz(tempURL, to: docs)
+            try Self.extractArchive(tempURL, to: docs)
             await MainActor.run { self.downloadProgress = 1.0 }
             try? FileManager.default.removeItem(at: tempURL)
             state = .ready
@@ -105,30 +105,70 @@ final class JavaRuntime: ObservableObject {
     }
     
     /// 解壓 tar.gz 到指定目錄
-    private static func extractTarGz(_ src: URL, to dst: URL) throws {
+    private static func extractArchive(_ src: URL, to dst: URL) throws {
         let data = try Data(contentsOf: src)
-        // Gunzip
-        let decompressed = try decompressGzip(data)
-        // Parse tar
-        try extractTar(decompressed, to: dst)
-    }
-    
-    private static func decompressGzip(_ data: Data) throws -> Data {
-        // 解析 gzip 頭，取出 deflate 數據，用 libz 的 raw inflate 解壓
-        guard data.count > 18 else {
-            throw NSError(domain: "JavaRuntime", code: 3, userInfo: [NSLocalizedDescriptionKey: "文件太小，不是有效的 gzip"])
+        let tarData: Data
+        if data.count >= 2 && data[0] == 0x78 && data[1] == 0x9C {
+            // zlib 格式：直接解
+            tarData = try zlibDecompress(data)
+        } else if data.count >= 2 && data[0] == 0x1F && data[1] == 0x8B {
+            // gzip 格式：解析頭後解（盡力）
+            tarData = try gzipDecompress(data)
+        } else {
+            // 假定已經是原始 tar
+            tarData = data
         }
-        guard data[0] == 0x1F && data[1] == 0x8B else {
-            throw NSError(domain: "JavaRuntime", code: 4, userInfo: [NSLocalizedDescriptionKey: "不是 gzip 格式（魔數不對）"])
+        try extractTar(tarData, to: dst)
+    }
+
+    /// zlib (RFC1950) 解壓：COMPRESSION_ZLIB 直接處理
+    private static func zlibDecompress(_ data: Data) throws -> Data {
+        let bufferSize = 1024 * 1024
+        var output = Data()
+        var ok = false
+        data.withUnsafeBytes { (srcPtr: UnsafeRawBufferPointer) in
+            guard let srcBase = srcPtr.baseAddress else { return }
+            var dummy: UInt8 = 0
+            var stream = compression_stream(
+                dst_ptr: withUnsafeMutablePointer(to: &dummy) { $0 },
+                dst_size: 0,
+                src_ptr: withUnsafePointer(to: &dummy) { $0 },
+                src_size: 0,
+                state: nil
+            )
+            guard compression_stream_init(&stream, COMPRESSION_STREAM_DECODE, COMPRESSION_ZLIB) != COMPRESSION_STATUS_ERROR else { return }
+            defer { compression_stream_destroy(&stream) }
+            stream.src_ptr = srcBase.assumingMemoryBound(to: UInt8.self)
+            stream.src_size = data.count
+            let dstBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
+            defer { dstBuffer.deallocate() }
+            var status: compression_status
+            repeat {
+                stream.dst_ptr = dstBuffer
+                stream.dst_size = bufferSize
+                status = compression_stream_process(&stream, 0)
+                let count = bufferSize - stream.dst_size
+                if count > 0 { output.append(dstBuffer, count: count) }
+                if status == COMPRESSION_STATUS_ERROR { break }
+            } while status == COMPRESSION_STATUS_OK
+            ok = (status == COMPRESSION_STATUS_END)
+        }
+        guard ok else {
+            throw NSError(domain: "JavaRuntime", code: 2, userInfo: [NSLocalizedDescriptionKey: "解壓失敗"])
+        }
+        return output
+    }
+
+    /// gzip 解析頭後轉 zlib 解（舊 tar.gz 兼容）
+    private static func gzipDecompress(_ data: Data) throws -> Data {
+        guard data.count > 18, data[0] == 0x1F, data[1] == 0x8B else {
+            throw NSError(domain: "JavaRuntime", code: 4, userInfo: [NSLocalizedDescriptionKey: "不是 gzip 格式"])
         }
         let flags = data[3]
         var headerSize = 10
         if flags & 0x04 != 0 {
-            guard data.count > headerSize + 2 else {
-                throw NSError(domain: "JavaRuntime", code: 5, userInfo: [NSLocalizedDescriptionKey: "gzip 頭損壞"])
-            }
-            let xlen = Int(data[headerSize]) | (Int(data[headerSize + 1]) << 8)
-            headerSize += 2 + xlen
+            guard data.count > headerSize + 2 else { throw NSError(domain: "JavaRuntime", code: 5, userInfo: [NSLocalizedDescriptionKey: "gzip 頭損壞"]) }
+            headerSize += 2 + Int(data[headerSize]) + (Int(data[headerSize + 1]) << 8)
         }
         if flags & 0x08 != 0 {
             while headerSize < data.count && data[headerSize] != 0 { headerSize += 1 }
@@ -139,58 +179,11 @@ final class JavaRuntime: ObservableObject {
             headerSize += 1
         }
         if flags & 0x02 != 0 { headerSize += 2 }
-        guard data.count > headerSize + 8 else {
-            throw NSError(domain: "JavaRuntime", code: 6, userInfo: [NSLocalizedDescriptionKey: "gzip 數據不完整"])
-        }
-        let deflateData = data[headerSize..<(data.count - 8)]
-        
-        // 用 Compression 框架解 raw deflate：構造一個最小的 zlib 流
-        // zlib 頭 78 9C + deflate + Adler32（我們計算正確的）
-        // 為了得到正確的 Adler32，先用不驗證的方式解一次
-        // 簡化：直接嘗試用 zlib 包裝解，如果失敗則報錯
+        guard data.count > headerSize + 8 else { throw NSError(domain: "JavaRuntime", code: 6, userInfo: [NSLocalizedDescriptionKey: "gzip 數據不完整"]) }
+        // deflate 段前後加上 zlib 頭尾（Adler32 填 0，盡力解）
         var zlibData = Data([0x78, 0x9C])
-        zlibData.append(contentsOf: deflateData)
-        
-        let bufferSize = 1024 * 1024
-        var output = Data()
-        let success: Bool = zlibData.withUnsafeBytes { srcPtr in
-            guard let srcBase = srcPtr.baseAddress else { return false }
-            var dummy: UInt8 = 0
-            var stream = compression_stream(
-                dst_ptr: withUnsafeMutablePointer(to: &dummy) { $0 },
-                dst_size: 0,
-                src_ptr: withUnsafePointer(to: &dummy) { $0 },
-                src_size: 0,
-                state: nil
-            )
-            guard compression_stream_init(&stream, COMPRESSION_STREAM_DECODE, COMPRESSION_ZLIB) != COMPRESSION_STATUS_ERROR else {
-                return false
-            }
-            defer { compression_stream_destroy(&stream) }
-            stream.src_ptr = srcBase.assumingMemoryBound(to: UInt8.self)
-            stream.src_size = zlibData.count
-            let dstBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
-            defer { dstBuffer.deallocate() }
-            var status: compression_status
-            repeat {
-                stream.dst_ptr = dstBuffer
-                stream.dst_size = bufferSize
-                status = compression_stream_process(&stream, 0)
-                let count = bufferSize - stream.dst_size
-                if count > 0 {
-                    output.append(dstBuffer, count: count)
-                }
-                // 如果遇到數據錯誤，嘗試忽略 Adler32 繼續
-                if status == COMPRESSION_STATUS_ERROR {
-                    break
-                }
-            } while status == COMPRESSION_STATUS_OK
-            return status == COMPRESSION_STATUS_END
-        }
-        guard success else {
-            throw NSError(domain: "JavaRuntime", code: 2, userInfo: [NSLocalizedDescriptionKey: "解壓失敗"])
-        }
-        return output
+        zlibData.append(contentsOf: data[headerSize..<(data.count - 8)])
+        return try zlibDecompress(zlibData)
     }
     
     private static func extractTar(_ data: Data, to dst: URL) throws {
