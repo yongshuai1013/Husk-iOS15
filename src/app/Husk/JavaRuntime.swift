@@ -162,8 +162,7 @@ final class JavaRuntime: ObservableObject {
         // 我們手動構造 zlib 包裝
         var zlibData = Data([0x78, 0x9C])
         zlibData.append(contentsOf: deflateData)
-        // Adler32 校驗（簡單起見填 0，解壓時不驗證）
-        zlibData.append(contentsOf: [0, 0, 0, 0])
+        // 不加 Adler32，試試解壓器是否驗證
         
         let bufferSize = 1024 * 1024
         var output = Data()
