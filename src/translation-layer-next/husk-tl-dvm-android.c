@@ -1114,13 +1114,15 @@ bool tl_javaapp_start(const tl_javaapp_config *cfg)
     /* the environment every Android process starts with (TrustedCertificateStore builds paths from ANDROID_DATA) */
     setenv("ANDROID_DATA", "/data", 0); setenv("ANDROID_ROOT", "/system", 0); setenv("ANDROID_STORAGE", "/storage", 0);
     setenv("EXTERNAL_STORAGE", "/sdcard", 0); setenv("ANDROID_ASSETS", "/system/app", 0); setenv("BOOTCLASSPATH", "", 0);
-    if (!tl_ld_add_apk(cfg->apk_path)) return false;
-    if (!tl_dvm_add_apk(cfg->apk_path)) return false;
+    if (!tl_ld_add_apk(cfg->apk_path)) { tl_log_line("javaapp: tl_ld_add_apk failed for %s", cfg->apk_path); return false; }
+    if (!tl_dvm_add_apk(cfg->apk_path)) { tl_log_line("javaapp: tl_dvm_add_apk failed for %s", cfg->apk_path); return false; }
     { char lib[1100]; snprintf(lib, sizeof(lib), "%s/lib", A.data); mkdir(lib, 0755); tl_ld_apk_libs(stub_lib, lib); }
     { pthread_attr_t rt; pthread_attr_init(&rt); pthread_attr_setstacksize(&rt, 64u << 20); pthread_create(&A.gl_thread, &rt, gl_main, NULL); }
     pthread_attr_t at; pthread_attr_init(&at); pthread_attr_setstacksize(&at, 256u << 20);
     pthread_t t;
-    return pthread_create(&t, &at, app_main, NULL) == 0;
+    int prc = pthread_create(&t, &at, app_main, NULL);
+    if (prc) tl_log_line("javaapp: pthread_create for app_main failed: %d", prc);
+    return prc == 0;
 }
 
 void tl_javaapp_touch(int phase, int id, float x, float y)
