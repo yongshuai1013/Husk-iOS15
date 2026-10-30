@@ -27,7 +27,11 @@ public class GLSurfaceView extends android.view.SurfaceView implements android.v
     public GLSurfaceView(android.content.Context c) { this(c, null); }
     public GLSurfaceView(android.content.Context c, android.util.AttributeSet a) { super(c, a); getHolder().addCallback(this); }
     public void surfaceCreated(android.view.SurfaceHolder h) { start(); }
-    public void surfaceChanged(android.view.SurfaceHolder h, int format, int w, int ht) {}
+    /** A new size for the surface (the view was laid out again: bars hidden, rotated): the GL thread tells the renderer. */
+    public void surfaceChanged(android.view.SurfaceHolder h, int format, int w, int ht) { if (w > 0 && ht > 0) { resized = ((long) w << 32) | ht; requestRender(); } }
+    private volatile long resized;
+    /** @hide Husk's GL thread: the size to give onSurfaceChanged, once (0: none new). */
+    public final long huskTakeResize() { long r = resized; resized = 0; return r; }
     public void surfaceDestroyed(android.view.SurfaceHolder h) {}
     public void surfaceRedrawNeeded(android.view.SurfaceHolder h) { requestRender(); }
     public void surfaceRedrawNeededAsync(android.view.SurfaceHolder h, Runnable done) { requestRender(); done.run(); }
@@ -60,8 +64,10 @@ public class GLSurfaceView extends android.view.SurfaceView implements android.v
                 EGLDisplay d = egl.eglGetDisplay(EGL10.EGL_DEFAULT_DISPLAY);
                 EGLConfig[] cfg = new EGLConfig[1];
                 egl.eglChooseConfig(d, null, cfg, 1, new int[1]);
-                contextFactory.createContext(egl, d, cfg[0]);
+                EGLContext probe = contextFactory.createContext(egl, d, cfg[0]);
                 version = Math.max(1, EGLContext.huskRequestedVersion());
+                // made off the render thread, that is a real context of its own: the render thread makes the one the app draws with
+                if (probe != null && probe != EGL10.EGL_NO_CONTEXT) try { contextFactory.destroyContext(egl, d, probe); } catch (RuntimeException e) { }
             } catch (RuntimeException e) {
                 android.util.Log.w("GLSurfaceView", "the app's EGLContextFactory threw: " + e);
                 version = 2;

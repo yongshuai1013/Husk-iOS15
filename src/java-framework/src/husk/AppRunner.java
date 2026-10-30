@@ -29,7 +29,20 @@ public final class AppRunner {
     private static ClassLoader sLoader;
     /** The app's class loader, as Android gives every app: a PathClassLoader over its APK and splits. Its classes say they come from
      *  it (Class.getClassLoader), and resources in the APKs are found through it. */
-    public static ClassLoader classLoader() { return sLoader != null ? sLoader : AppRunner.class.getClassLoader(); }
+    public static ClassLoader classLoader() {
+        // a packer's stub may have put a loader over the app's real code into LoadedApk.mClassLoader: components come from it
+        ClassLoader swapped = android.app.LoadedApk.self().getClassLoader();
+        if (swapped != baseClassLoader() && swapped != sAdopted) {
+            sAdopted = swapped;
+            Native.setAppClassLoader(swapped);
+            Thread.currentThread().setContextClassLoader(swapped);
+            android.util.Log.d("Husk", "the app installed a class loader of its own: " + swapped);
+        }
+        return swapped;
+    }
+    private static ClassLoader sAdopted;
+    /** The loader the app was launched with (its APK and splits, or what its component factory gave). */
+    public static ClassLoader baseClassLoader() { return sLoader != null ? sLoader : AppRunner.class.getClassLoader(); }
     private static void installClassLoader() {
         try {
             StringBuilder path = new StringBuilder(Native.apkPath());
@@ -78,15 +91,17 @@ public final class AppRunner {
         Manifest.read();
         installClassLoader();
         installComponentFactory();
+        android.app.LoadedApk.self().huskSetClassLoader(baseClassLoader());
         ContextImpl base = ContextImpl.app();
         String appCls = applicationClass != null ? applicationClass : Manifest.applicationClass;
         Application app;
         try {
             if (appCls != null && usesFactory()) app = sFactory.instantiateApplication(classLoader(), appCls);
-            else app = appCls != null ? (Application) Class.forName(appCls).newInstance() : new Application();
+            else app = appCls != null ? (Application) Class.forName(appCls, true, classLoader()).newInstance() : new Application();
         }
         catch (ClassNotFoundException e) { android.util.Log.w("Husk", "no application class " + appCls); app = new Application(); }
         sApp = app;
+        android.app.ActivityThread.huskBind(app);
         Application.huskSet(app);
         ContextImpl.setApplication(app);
         app.huskAttach(base);
@@ -96,12 +111,32 @@ public final class AppRunner {
         app.onCreate();
         Manifest.Component launcher = Manifest.activity(activityClass);
         Intent main = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
-        main.setComponent(new ComponentName(Native.packageName(), activityClass));
+        // started through the launcher's alias, the activity's component is the alias (Android compares that, not the class, when
+        // the app later starts the target by name: LinkedIn's MainActivity starts a new one of itself and finishes)
+        Manifest.Component entry = Manifest.launcher();
+        String startedAs = entry != null && "activity-alias".equals(entry.kind) && activityClass.equals(entry.parentActivity) ? entry.name : activityClass;
+        main.setComponent(new ComponentName(Native.packageName(), startedAs));
         main.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         launch(activityClass, main, null, -1, launcher);
         Looper.loop();
     }
-    public static Application application() { return sApp; }
+    public static Application application() { Application a = android.app.ActivityThread.currentActivityThread().huskInitialApplication(); return a != null ? a : sApp; }
+    /** LoadedApk.makeApplication: the app's Application class (or the plain one) made through the loader and attached, not created
+     *  (whoever asked calls onCreate, as Instrumentation.callApplicationOnCreate does). */
+    public static Application makeApplication(String cls, ClassLoader loader) {
+        Application app;
+        try {
+            if (cls == null || cls.isEmpty()) app = new Application();
+            else if (usesFactory()) app = sFactory.instantiateApplication(loader, cls);
+            else app = (Application) Class.forName(cls, true, loader).newInstance();
+        } catch (Throwable t) {
+            android.util.Log.w("Husk", "makeApplication " + cls + ": " + t);
+            app = new Application();
+        }
+        if (app.getBaseContext() == null) app.huskAttach(ContextImpl.app());
+        android.app.ActivityThread.currentActivityThread().huskAddApplication(app);
+        return app;
+    }
     static final class UncaughtLogger implements Thread.UncaughtExceptionHandler {
         public void uncaughtException(Thread t, Throwable e) {
             android.util.Log.e("AndroidRuntime", "FATAL EXCEPTION: " + t.getName(), e);
@@ -118,7 +153,7 @@ public final class AppRunner {
             if (!p.enabled) continue;
             try {
                 ContentProvider cp = usesFactory() ? sFactory.instantiateProvider(classLoader(), p.name)
-                        : (ContentProvider) Class.forName(p.name).newInstance();
+                        : (ContentProvider) Class.forName(p.name, true, classLoader()).newInstance();
                 ProviderInfo info = new ProviderInfo();
                 info.name = p.name; info.authority = p.authorities; info.packageName = Native.packageName(); info.exported = p.exported; info.metaData = p.metaData; info.grantUriPermissions = p.grantUriPermissions;
                 info.applicationInfo = app.getApplicationInfo();
@@ -140,7 +175,7 @@ public final class AppRunner {
     static Activity launch(String cls, Intent intent, Activity caller, int request, Manifest.Component info) throws Exception {
         android.util.Log.d("Husk", "launch " + cls);
         Activity prev = top();
-        Activity a = usesFactory() ? sFactory.instantiateActivity(classLoader(), cls, intent) : (Activity) Class.forName(cls).newInstance();
+        Activity a = usesFactory() ? sFactory.instantiateActivity(classLoader(), cls, intent) : (Activity) Class.forName(cls, true, classLoader()).newInstance();
         ContextImpl base = ContextImpl.forActivity();
         a.huskAttach(base, sApp, intent, info, caller, request);
         if (prev != null && prev.isResumedHusk()) prev.huskPause();
@@ -154,6 +189,11 @@ public final class AppRunner {
         }
         return a;
     }
+    /** The component an activity was started as: its class, or the alias it was reached through. */
+    private static String startedAs(Activity a) {
+        Intent i = a.getIntent();
+        return i != null && i.getComponent() != null ? i.getComponent().getClassName() : a.getClass().getName();
+    }
     /** Context.startActivity: an activity of the app's own, or something the host can open (a web page, mail, the store). */
     public static void startActivity(Context from, Intent i, int request, Bundle opts) {
         Manifest.Component c = Manifest.resolve(i);
@@ -165,7 +205,7 @@ public final class AppRunner {
             sHandler.post(() -> {
                 try {
                     if ((intent.getFlags() & Intent.FLAG_ACTIVITY_CLEAR_TOP) != 0) {
-                        for (int k = sStack.size() - 1; k >= 0; k--) if (sStack.get(k).getClass().getName().equals(c.name)) {
+                        for (int k = sStack.size() - 1; k >= 0; k--) if (startedAs(sStack.get(k)).equals(intent.getComponent().getClassName())) {
                             Activity existing = sStack.get(k);
                             while (top() != existing) finishNow(top(), false);
                             existing.setIntent(intent);
@@ -176,9 +216,10 @@ public final class AppRunner {
                     }
                     if ((intent.getFlags() & 0x20000000 /* SINGLE_TOP */) != 0 || c.launchMode == 1) {
                         Activity t = top();
-                        if (t != null && t.getClass().getName().equals(c.name)) { t.setIntent(intent); return; }
+                        if (t != null && !t.isFinishing() && startedAs(t).equals(intent.getComponent().getClassName())) { t.huskNewIntent(intent); return; }
                     }
-                    launch(c.name, intent, caller, request, c);
+                    // an <activity-alias> starts the activity it names; the intent keeps the alias as its component, as on Android
+                    launch("activity-alias".equals(c.kind) && c.parentActivity != null ? c.parentActivity : c.name, intent, caller, request, c);
                 } catch (Throwable t) {
                     android.util.Log.e("Husk", "starting " + c.name + " failed", t);
                     if (t instanceof RuntimeException) throw (RuntimeException) t;
@@ -198,6 +239,11 @@ public final class AppRunner {
         if (Intent.ACTION_SEND.equals(action)) {
             String text = i.getStringExtra(Intent.EXTRA_TEXT);
             if (text != null) Native.share(text);
+            return;
+        }
+        if (Documents.handles(i)) {
+            final Activity caller = from instanceof Activity ? (Activity) from : top();
+            sHandler.post(() -> Documents.pick(caller, i, request));
             return;
         }
         if ("android.intent.action.CHOOSER".equals(action)) { Intent inner = i.getParcelableExtra("android.intent.extra.INTENT"); if (inner != null) startActivity(from, inner, request, opts); return; }
@@ -339,5 +385,5 @@ public final class AppRunner {
             if (phase == 3) down = 0;
         }
     }
-    static final class ViewRootDispatch { static void key(KeyEvent e) { if (!ViewRoot.dispatchKey(e)) { Activity a = top(); if (a != null) a.dispatchKeyEvent(e); } } }
+    static final class ViewRootDispatch { static void key(KeyEvent e) { if (ViewRoot.keyTarget() != null) ViewRoot.dispatchKey(e); else { Activity a = top(); if (a != null) a.dispatchKeyEvent(e); } } }
 }
