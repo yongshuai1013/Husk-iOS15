@@ -15,6 +15,7 @@ struct SettingsTab: View {
 
                 Section {
                     row(JITSettings(), "bolt.fill", .yellow, "JIT & Sideload", "StikJIT is built in — the recommended way")
+                    row(JITLessSettings(), "bolt.slash.fill", .mint, "Play without JIT", "No debugger")
                 } header: {
                     Text("JIT")
                 } footer: {
@@ -827,5 +828,90 @@ extension Bundle {
     }
     var commit: String {
         (infoDictionary?["HuskBuildCommit"] as? String) ?? "?"
+    }
+}
+
+// MARK: - Play without JIT
+
+struct JITLessSettings: View {
+    @AppStorage(JITLess.key) private var jitless = false
+    @ObservedObject private var certificate = SigningCertificate.shared
+    @State private var pickedP12: Data?
+    @State private var p12Password = ""
+    @State private var cacheBytes = JITLess.cacheBytes
+
+    var body: some View {
+        HuskForm {
+            Section {
+                Toggle("Play without JIT", isOn: $jitless)
+                DetailRow(label: "Prebuilt games", value: JITLess.libraryCount > 0 ? "Geometry Dash" : "none in this build", mono: false)
+                if cacheBytes > 0 {
+                    DetailRow(label: "Converted games", value: ByteCountFormatter.string(fromByteCount: cacheBytes, countStyle: .file), mono: false)
+                    Button(role: .destructive) {
+                        JITLess.clearCache(); cacheBytes = JITLess.cacheBytes
+                    } label: { Label("Remove Converted Games", systemImage: "trash") }
+                }
+            }
+            .onAppear { cacheBytes = JITLess.cacheBytes }
+
+            Section {
+                if let info = certificate.info {
+                    DetailRow(label: "Team", value: info.teamID)
+                    DetailRow(label: "Expires", value: info.expires.formatted(date: .abbreviated, time: .shortened), mono: false)
+                    if info.expires < Date() {
+                        Text("This certificate has expired. Refresh Husk in your store, then import its certificate again.")
+                            .font(.caption).foregroundStyle(.orange)
+                    }
+                } else {
+                    DetailRow(label: "Certificate", value: "not imported", mono: false)
+                }
+                ForEach(SigningCertificate.Store.allCases) { store in
+                    Button {
+                        certificate.requestFromStore(store)
+                    } label: { Label("Import from \(store.title)", systemImage: "arrow.down.circle") }
+                }
+                Button {
+                    HuskFilePicker.present(types: [.pkcs12, .data], multiple: false, onPick: { urls in
+                        guard let url = urls.first else { return }
+                        let scoped = url.startAccessingSecurityScopedResource()
+                        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                        guard let data = try? Data(contentsOf: url) else { certificate.lastError = "That file could not be read."; return }
+                        p12Password = ""
+                        pickedP12 = data
+                    }, onFail: { certificate.lastError = $0 })
+                } label: { Label("Import .p12 File", systemImage: "doc.badge.plus") }
+                if certificate.info != nil {
+                    Button(role: .destructive) { certificate.remove() } label: { Label("Remove Certificate", systemImage: "trash") }
+                }
+                if let why = certificate.lastError {
+                    Text(why).font(.caption).foregroundStyle(.orange)
+                }
+            } header: {
+                Text("Certificate")
+            }
+        }
+        .huskForm()
+        .navigationTitle("Play without JIT")
+        .sheet(isPresented: Binding(get: { pickedP12 != nil }, set: { if !$0 { pickedP12 = nil } })) {
+            NavigationView {
+                Form {
+                    Section {
+                        SecureField("Password (empty if none)", text: $p12Password)
+                            .textContentType(.password)
+                    }
+                }
+                .navigationTitle("Certificate Password")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { pickedP12 = nil } }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Import") {
+                            if let data = pickedP12 { certificate.importP12(data, password: p12Password) }
+                            pickedP12 = nil
+                        }
+                    }
+                }
+            }
+        }
     }
 }

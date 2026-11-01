@@ -84,6 +84,7 @@ struct HuskApp: App {
             ContentView()
                 // An APK shared to Husk, or opened in it from Files.
                 .onOpenURL { url in
+                    if SigningCertificate.shared.handle(url) { return }   // husk://certificate from SideStore / AltStore
                     // husk://open_app?unique_identifier=… from a Home Screen clip; anything else may be a shared APK
                     if !AppClip.handle(url) { IncomingFiles.shared.receive(url) }
                 }
