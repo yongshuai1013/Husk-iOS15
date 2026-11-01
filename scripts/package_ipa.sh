@@ -190,6 +190,13 @@ PYEOF_INNER
 else
     echo "==> WARNING: $RUNTIME_ZLIB not found; java-runtime will not be bundled" >&2
 fi
+# The AOSP core dex rides as its own asset: inside the runtime tar it would push
+# the file past the GitHub API blob size limit. Same folder, so aosp.c finds it.
+CORE_DEX="$HUSK_ROOT/assets/husk-framework-core.dex"
+if [ -f "$CORE_DEX" ] && [ -d "$APP/java-runtime" ]; then
+    cp "$CORE_DEX" "$APP/java-runtime/husk-framework-core.dex"
+    echo "==> bundled husk-framework-core.dex"
+fi
 
 echo "==> packaging"
 STAGE="$(mktemp -d)"
