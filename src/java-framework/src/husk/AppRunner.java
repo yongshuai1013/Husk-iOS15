@@ -93,6 +93,42 @@ public final class AppRunner {
             sFactory = android.app.AppComponentFactory.DEFAULT;
         }
     }
+
+    /* Diagnostic watchdog: the host heartbeat can see frames stop, but not why. When the main
+       thread stops answering beats for a while, dump every thread's stack into the log so a
+       silent stall (deadlock / blocked native call) names its own location. */
+    private static volatile long sLastBeatMs;
+    private static void startMainThreadWatchdog() {
+        sLastBeatMs = System.currentTimeMillis();
+        final Runnable beat = new Runnable() { public void run() { sLastBeatMs = System.currentTimeMillis(); } };
+        Thread w = new Thread(new Runnable() { public void run() {
+            boolean reported = false;
+            for (;;) {
+                try { Thread.sleep(2000); } catch (InterruptedException e) { return; }
+                if (sHandler != null) sHandler.post(beat);
+                long gap = System.currentTimeMillis() - sLastBeatMs;
+                if (gap > 6000) {
+                    if (!reported) {
+                        reported = true;
+                        Thread main = Looper.getMainLooper() != null ? Looper.getMainLooper().getThread() : null;
+                        android.util.Log.e("HuskWatchdog", "main thread stalled " + gap + "ms (alive="
+                            + (main != null && main.isAlive()) + ", state=" + (main != null ? main.getState().toString() : "?") + "); thread stacks:");
+                        try {
+                            for (java.util.Map.Entry<Thread, StackTraceElement[]> e : Thread.getAllStackTraces().entrySet()) {
+                                StringBuilder sb = new StringBuilder("--- ").append(e.getKey().getName()).append(" ").append(e.getKey().getState());
+                                for (StackTraceElement el : e.getValue()) sb.append("\n    at ").append(el);
+                                android.util.Log.e("HuskWatchdog", sb.toString());
+                            }
+                        } catch (Throwable t) {
+                            android.util.Log.e("HuskWatchdog", "stack dump failed: " + t);
+                        }
+                    }
+                } else reported = false;
+            }
+        } }, "husk-watchdog");
+        w.setDaemon(true);
+        w.start();
+    }
     private static boolean usesFactory() { return sFactory != android.app.AppComponentFactory.DEFAULT; }
 
     public static void run(String activityClass, String applicationClass) throws Exception {
@@ -103,6 +139,7 @@ public final class AppRunner {
         /* as RuntimeInit: there is always a default handler (apps wrap it and call through). Android's kills the app; this one
            reports the exception and lets the thread end, as Husk did before. */
         if (Thread.getDefaultUncaughtExceptionHandler() == null) Thread.setDefaultUncaughtExceptionHandler(new UncaughtLogger());
+        startMainThreadWatchdog();
         Manifest.read();
         installClassLoader();
         installComponentFactory();
