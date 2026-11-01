@@ -73,10 +73,10 @@ void tl_jni_set_trace(int level);       /* 1: lookups; 2: every call */
 /* Declare a class with its superclass (JNI names). Safe to repeat. */
 tl_jclass *tl_jni_declare(const char *name, const char *super);
 tl_jclass *tl_jni_class(const char *name);                    /* find or create; NULL never */
-bool tl_jni_class_known(const tl_jclass *c);                  /* an HLE method or registered natives for it */
 const char *tl_jni_class_name(const jobj *o);                 /* "java/lang/String", or "?" */
 jobj *tl_jni_class_object(const char *name);                  /* the java.lang.Class object, as a jclass */
 void tl_jni_register_hle(const tl_jhle *table);               /* NULL-terminated by cls == NULL */
+bool tl_jni_class_known(const tl_jclass *c);                  /* an HLE method or registered natives for it */
 
 void *tl_jni_vm(void);
 void *tl_jni_env(void);
