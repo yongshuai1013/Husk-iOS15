@@ -71,6 +71,7 @@ xcodebuild -project "$HUSK_ROOT/src/app/Husk.xcodeproj" -scheme Husk \
 if ! grep -q "BUILD SUCCEEDED" "$DD/build.log"; then
     echo "build failed; refusing to package a stale app" >&2
     grep -E "error:" "$DD/build.log" | head -10 >&2
+    grep -A 40 "Undefined symbols" "$DD/build.log" >&2 || true
     exit 1
 fi
 
