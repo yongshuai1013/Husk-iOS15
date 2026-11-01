@@ -182,6 +182,9 @@ NAT(String_intern)
     pthread_mutex_unlock(&g_intern_lock);
     return true;
 }
+/* The canonical copy of a string (String.intern): every string literal goes through here, so equal literals are one object across
+ * classes and dex files, as Java promises -- code compares them with == (p4a's AssetExtract: method == "private"). */
+jobj *dvm_intern(jobj *s) { jvalue r; if (!s || !String_intern(s, NULL, &r) || !r.l) return s; return r.l; }
 NAT(String_toCharArray)
 {
     (void)a;
@@ -973,12 +976,21 @@ NAT(Class_getInterfacesInternal)
     *ret = L(n ? arr : NULL);
     return true;
 }
+/* ART's refusal to make an object of an abstract class or an interface (reflection and Unsafe alike): a library that tries, as JSON
+ * mappers do on their way to the right subclass, gets InstantiationException and goes on, rather than an object whose abstract
+ * methods throw AbstractMethodError later */
+static bool abstract_refused(dvm_class *c, const char *name)
+{
+    if (c && (c->flags & (0x400 | 0x200)) && !c->prim && !c->elem) { dvm_throw("java/lang/InstantiationException", "Can't instantiate %s %s", c->flags & 0x200 ? "interface" : "abstract class", name); return true; }
+    return false;
+}
 NAT(Class_newInstance)
 {
     (void)a;
     tl_jclass *jc = self->klass.jc;
     dvm_class *c = dvm_class_of(jc);
     if (!c) return dvm_throw("java/lang/InstantiationException", "%s", jc->name);
+    if (abstract_refused(c, jc->name)) return false;
     if (!dvm_ensure_init(c)) return false;
     dvm_method *init = dvm_find_method(c, "<init>", "()V", false);
     if (!init || init->cls != c) return dvm_throw("java/lang/InstantiationException", "%s has no zero-argument constructor", jc->name);
@@ -1469,6 +1481,7 @@ NAT(Ctor_newInstance0)
     dvm_method *m = method_of(self);
     if (!m) return npe("constructor");
     jvalue args[64];
+    if (abstract_refused(m->cls, m->cls->name)) return false;
     if (!unbox_args(m, a[0].l, args)) return false;
     if (!dvm_ensure_init(m->cls)) return false;
     jobj *o = dvm_new_object(m->cls->jc); dvm_slots(o);
@@ -1644,6 +1657,7 @@ NAT(U_allocateInstance)
     (void)self;
     jobj *cls = a[0].l;
     if (!cls) return npe("class");
+    if (abstract_refused(dvm_class_of(cls->klass.jc), cls->klass.jc->name)) return false;
     jobj *o = dvm_new_object(cls->klass.jc); dvm_slots(o);
     *ret = L(o);
     return true;
@@ -1954,6 +1968,8 @@ static const entry k_natives[] = {
 
     { "java/lang/Class", "getNameNative", "()Ljava/lang/String;", Class_getNameNative },
     { "java/lang/Class", "classForName", "(Ljava/lang/String;ZLjava/lang/ClassLoader;)Ljava/lang/Class;", Class_classForName },
+    /* Unity (newer players) asks for a class by its three-argument forName; ART hands that to the same native lookup */
+    { "java/lang/Class", "forName", "(Ljava/lang/String;ZLjava/lang/ClassLoader;)Ljava/lang/Class;", Class_classForName },
     { "java/lang/Class", "getPrimitiveClass", "(Ljava/lang/String;)Ljava/lang/Class;", Class_getPrimitiveClass },
     { "java/lang/Class", "getInterfacesInternal", "()[Ljava/lang/Class;", Class_getInterfacesInternal },
     { "java/lang/Class", "newInstance", "()Ljava/lang/Object;", Class_newInstance },

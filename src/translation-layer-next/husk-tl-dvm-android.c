@@ -11,7 +11,6 @@
 #include "husk-tl-dvm-gl.h"
 
 #include <CoreFoundation/CoreFoundation.h>
-
 #include <fcntl.h>
 #include <pthread.h>
 #include <stdatomic.h>
@@ -393,6 +392,11 @@ void tl_javaapp_text(const char *utf8) { if (utf8 && *utf8) text_push("t", utf8)
 void tl_javaapp_text_delete(void) { text_push("d", NULL); }
 void tl_javaapp_text_action(void) { text_push("e", NULL); }
 void tl_javaapp_keyboard_closed(void) { text_push("h", NULL); }
+void tl_javaapp_documents_picked(const char *const *paths, int n)
+{
+    for (int i = 0; i < n; i++) if (paths[i] && *paths[i]) text_push("f", paths[i]);
+    text_push("F", NULL);
+}
 void tl_javaapp_set_insets(int l, int t, int r, int b, int ime)
 {
     A.insets[0] = l; A.insets[1] = t; A.insets[2] = r; A.insets[3] = b; A.insets[4] = ime;
@@ -424,6 +428,15 @@ NAT(N_getClipboard)
     return true;
 }
 NAT(N_share) { (void)self; (void)ret; const char *t = tl_jni_string(a[0].l); tl_log_line("javaapp: share %.80s", t ? t : ""); if (A.cfg.share && t) A.cfg.share(t); return true; }
+NAT(N_pickDocuments)
+{
+    (void)self; (void)ret;
+    const char *t = tl_jni_string(a[0].l);
+    tl_log_line("javaapp: file picker for %s%s", t ? t : "*/*", a[1].i ? " (several)" : "");
+    if (A.cfg.pick_documents) A.cfg.pick_documents(t ? t : "*/*", a[1].i != 0);
+    else tl_javaapp_documents_picked(NULL, 0);     /* no picker here (host tests): the user backed out */
+    return true;
+}
 NAT(N_setOrientation) { (void)self; (void)ret; if (A.cfg.set_orientation) A.cfg.set_orientation(a[0].i); return true; }
 NAT(N_nightMode) { (void)self; (void)a; jvalue v; v.j = A.cfg.night_mode ? 1 : 0; *ret = v; return true; }
 /* 24-hour time as the phone's region and Settings > General > Date & Time choose it: the locale's hour pattern ("j") has no am/pm */
@@ -456,7 +469,8 @@ NAT(N_startGL)
     if (A.gl_started) return true;
     A.gl_version = a[2].i; A.gl_view = a[0].l;
     A.gl_started = true;
-    A.gl_renderer = a[1].l;                 /* the render thread picks it up */
+    /* the render thread picks it up; released after the version and view, so it never sees the renderer without them */
+    __atomic_store_n(&A.gl_renderer, a[1].l, __ATOMIC_RELEASE);
     return true;
 }
 
@@ -493,6 +507,7 @@ static const struct { const char *name, *sig; dvm_native_fn fn; } k_native[] = {
     { "setClipboard", "(Ljava/lang/String;)V", N_setClipboard },
     { "getClipboard", "()Ljava/lang/String;", N_getClipboard },
     { "share", "(Ljava/lang/String;)V", N_share },
+    { "pickDocuments", "(Ljava/lang/String;Z)V", N_pickDocuments },
     { "setOrientation", "(I)V", N_setOrientation },
     { "insets", "()[I", N_insets },
     { "nightMode", "()Z", N_nightMode },
@@ -856,6 +871,20 @@ static void app_frame_draw(overlay *o, overlay *up, int vw, int vh)
     draw(0x0005, 0, 4);
     viewport(0, 0, vw, vh);
 }
+/* For EGL: whether this runtime's compositor holds the screen, and an app's own EGL window's frame for it (NULL: no longer shown) */
+bool tl_javaapp_compositing(void) { pthread_mutex_lock(&E2.lk); bool r = E2.ready; pthread_mutex_unlock(&E2.lk); return r; }
+void tl_javaapp_app_pixels(const void *px, int w, int h)
+{
+    pthread_mutex_lock(&E2.lk);
+    if (!px) { E2.on = false; E2.seq++; pthread_mutex_unlock(&E2.lk); return; }
+    size_t n = (size_t)w * h * 4;
+    if (E2.pw != w || E2.ph != h || !E2.px) E2.px = realloc(E2.px, n);
+    if (E2.px) memcpy(E2.px, px, n);
+    E2.pw = w; E2.ph = h; E2.tex = 0;
+    E2.x = 0; E2.y = 0; E2.w = A.cfg.width; E2.h = A.cfg.height;
+    E2.on = true; E2.seq++;
+    pthread_mutex_unlock(&E2.lk);
+}
 static uint64_t app_frame_seq(void) { pthread_mutex_lock(&E2.lk); uint64_t q = E2.seq; pthread_mutex_unlock(&E2.lk); return q; }
 static bool app_frame_on(void) { pthread_mutex_lock(&E2.lk); bool q = E2.on; pthread_mutex_unlock(&E2.lk); return q; }
 
@@ -912,7 +941,7 @@ static void *gl_main(void *arg)
         if (atomic_load(&A.paused)) { usleep(20000); next = now_ns(); continue; }
         bool drew = false;
         /* the app's renderer, once its GLSurfaceView is on screen */
-        if (A.gl_renderer && !app) {
+        if (__atomic_load_n(&A.gl_renderer, __ATOMIC_ACQUIRE) && !app) {
             /* GLSurfaceView's default is OpenGL ES 1 (fixed function, through ANGLE's ES1 front end); 2 and 3 as asked */
             int es = A.gl_version >= 3 && es3 ? 3 : A.gl_version <= 1 ? 1 : 2;
             const EGLint attr[] = { 0x3098, es, EGL_NONE };
@@ -952,6 +981,16 @@ static void *gl_main(void *arg)
             makeCurrent(dpy, surf, surf, app);
             jvalue draw = tl_jni_call(A.gl_view, "huskBeginFrame", "()Z", NULL);
             if (tl_jni_pending()) log_pending("a queued GL event");
+            /* the view's surface changed size (laid out again: the app hid the bars, or turned): onSurfaceChanged again, as GLThread does */
+            jvalue rs = tl_jni_call(A.gl_view, "huskTakeResize", "()J", NULL);
+            if (tl_jni_pending()) log_pending("huskTakeResize");
+            if (rs.j) {
+                jvalue p3[3] = { L(gl10), I((int)(rs.j >> 32)), I((int)(rs.j & 0xffffffff)) };
+                tl_log_line("javaapp: the GL view is now %dx%d", (int)(rs.j >> 32), (int)(rs.j & 0xffffffff));
+                tl_jni_call(A.gl_renderer, "onSurfaceChanged", "(Ljavax/microedition/khronos/opengles/GL10;II)V", p3);
+                if (tl_jni_pending()) log_pending("onSurfaceChanged");
+                draw.z = true;
+            }
             /* a new frame of views needs the scene under it again: what was swapped is gone */
             if (draw.z || fresh || atomic_exchange(&A.render_requested, false)) {
                 tl_jni_call(A.gl_renderer, "onDrawFrame", "(Ljavax/microedition/khronos/opengles/GL10;)V", p1);
@@ -1112,6 +1151,12 @@ bool tl_javaapp_start(const tl_javaapp_config *cfg)
     { void tl_codewrite_enable(void); tl_codewrite_enable(); }
     A.cfg = *cfg;
     snprintf(A.apk, sizeof(A.apk), "%s", cfg->apk_path);
+    /* JIT-less mode: LuaJIT (LÖVE games) runs its interpreter, as the SDL driver already has it do */
+    if (getenv("TL_NO_XMEM")) { void tl_luajit_interpreter_only(void); tl_luajit_interpreter_only(); }
+    /* an app whose manifest needs OpenGL ES 3.1 or 3.2 is told the driver has it (ANGLE over Metal stops at 3.0; the shim writes
+       its 310/320 es shaders down), as it would otherwise refuse to start */
+    { int tl_manifest_gles(const char *); void tl_egl_es3_claim(int); int gv = tl_manifest_gles(cfg->apk_path);
+      if (gv >= 0x30001) { tl_egl_es3_claim(gv & 0xffff); tl_log_line("egl: the manifest asks for OpenGL ES 3.%d: the driver is described so", gv & 0xffff); } }
     snprintf(A.data, sizeof(A.data), "%s", cfg->data_dir);
     snprintf(A.ext, sizeof(A.ext), "%s/sdcard", cfg->data_dir);
     snprintf(A.fwres, sizeof(A.fwres), "%s", cfg->framework_res ? cfg->framework_res : "");
@@ -1129,15 +1174,13 @@ bool tl_javaapp_start(const tl_javaapp_config *cfg)
     /* the environment every Android process starts with (TrustedCertificateStore builds paths from ANDROID_DATA) */
     setenv("ANDROID_DATA", "/data", 0); setenv("ANDROID_ROOT", "/system", 0); setenv("ANDROID_STORAGE", "/storage", 0);
     setenv("EXTERNAL_STORAGE", "/sdcard", 0); setenv("ANDROID_ASSETS", "/system/app", 0); setenv("BOOTCLASSPATH", "", 0);
-    if (!tl_ld_add_apk(cfg->apk_path)) { tl_log_line("javaapp: tl_ld_add_apk failed for %s", cfg->apk_path); return false; }
-    if (!tl_dvm_add_apk(cfg->apk_path)) { tl_log_line("javaapp: tl_dvm_add_apk failed for %s", cfg->apk_path); return false; }
+    if (!tl_ld_add_apk(cfg->apk_path)) return false;
+    if (!tl_dvm_add_apk(cfg->apk_path)) return false;
     { char lib[1100]; snprintf(lib, sizeof(lib), "%s/lib", A.data); mkdir(lib, 0755); tl_ld_apk_libs(stub_lib, lib); }
     { pthread_attr_t rt; pthread_attr_init(&rt); pthread_attr_setstacksize(&rt, 64u << 20); pthread_create(&A.gl_thread, &rt, gl_main, NULL); }
     pthread_attr_t at; pthread_attr_init(&at); pthread_attr_setstacksize(&at, 256u << 20);
     pthread_t t;
-    int prc = pthread_create(&t, &at, app_main, NULL);
-    if (prc) tl_log_line("javaapp: pthread_create for app_main failed: %d", prc);
-    return prc == 0;
+    return pthread_create(&t, &at, app_main, NULL) == 0;
 }
 
 void tl_javaapp_touch(int phase, int id, float x, float y)

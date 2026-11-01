@@ -10,6 +10,8 @@
 #define _DARWIN_C_SOURCE
 #include "husk-tl-bionic.h"
 const char *tl_ld_main_apk(void);
+bool tl_ld_aot_contains(const void *addr);
+bool tl_ld_covers(const void *addr, size_t bytes);
 #include "husk-tl-internal.h"
 #include "husk-tl-codewrite.h"
 #include "husk-tl-xmem.h"
@@ -17,6 +19,8 @@ const char *tl_ld_main_apk(void);
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
+#include <execinfo.h>
+#include <TargetConditionals.h>
 #include <stdbool.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -157,12 +161,36 @@ void tl_set_cacerts_dir(const char *dir) { snprintf(g_cacerts, sizeof(g_cacerts)
  * typeface (Skia, in Flutter apps): a copy the app carries, laid out as fonts/ and etc/ under one directory. */
 static char g_sysfonts[1024];
 void tl_set_system_fonts_dir(const char *dir) { snprintf(g_sysfonts, sizeof(g_sysfonts), "%s", dir ? dir : ""); }
+/* Fonts the app downloaded later (the Chinese, Japanese and Korean ones the bundle leaves out, #95): a /system/fonts file the bundle
+ * does not have is looked for here too, and fonts.xml already names them. */
+static char g_extrafonts[1024];
+void tl_set_extra_fonts_dir(const char *dir) { snprintf(g_extrafonts, sizeof(g_extrafonts), "%s", dir ? dir : ""); }
 
 const char *tl_path_resolve(const char *path, char *buf, size_t n)
 {
     if (!path) return path;
     if (g_sysfonts[0]) {
-        if (!strncmp(path, "/system/fonts", 13) && (path[13] == 0 || path[13] == '/')) { snprintf(buf, n, "%s/fonts%s", g_sysfonts, path + 13); return buf; }
+        const char *font_suffix = NULL;
+        if (!strncmp(path, "/system/fonts", 13) && (path[13] == 0 || path[13] == '/'))
+            font_suffix = path + 13;
+        /* Java uses its writable data directory as ANDROID_ROOT. Skia joins that
+         * root with /fonts; route just that subtree through the same system and
+         * downloaded-font lookup, without changing Java's environment or data paths. */
+        const char *root = getenv("ANDROID_ROOT");
+        size_t root_len = root ? strlen(root) : 0;
+        if (!font_suffix && root_len && !strncmp(path, root, root_len) &&
+            !strncmp(path + root_len, "/fonts", 6) &&
+            (path[root_len + 6] == 0 || path[root_len + 6] == '/'))
+            font_suffix = path + root_len + 6;
+        if (font_suffix) {
+            snprintf(buf, n, "%s/fonts%s", g_sysfonts, font_suffix);
+            if (g_extrafonts[0] && font_suffix[0] == '/' && access(buf, F_OK) != 0) {
+                char extra[1100];
+                snprintf(extra, sizeof(extra), "%s%s", g_extrafonts, font_suffix);
+                if (access(extra, F_OK) == 0) snprintf(buf, n, "%s", extra);
+            }
+            return buf;
+        }
         if (!strcmp(path, "/system/etc/fonts.xml") || !strcmp(path, "/system/etc/font_fallback.xml")) { snprintf(buf, n, "%s/etc%s", g_sysfonts, path + 11); return buf; }
     }
     if (g_cacerts[0]) {
@@ -207,6 +235,18 @@ const char *tl_path_resolve(const char *path, char *buf, size_t n)
                 }
                 return buf;
             }
+        }
+    }
+    /* /data/user/0/<package> and /data/data/<package>: the app's own folder, as Android names it -- short, where the real one on a
+       phone is ~150 characters (p4a's launcher allows its script path 128) */
+    {
+        static const char *const roots[] = { "/data/user/0/", "/data/data/" };
+        for (int i = 0; i < 2; i++) {
+            size_t l = strlen(roots[i]);
+            if (strncmp(path, roots[i], l) || !path[l] || path[l] == '/') continue;
+            const char *rest = strchr(path + l, '/');
+            snprintf(buf, n, "%s%s", tl_data_dir(), rest ? rest : "");
+            return buf;
         }
     }
     /* /data/local/tmp: the world-writable scratch folder (JNA unpacks itself there): a folder of the app's own */
@@ -316,6 +356,9 @@ static bool jar_lookup(const char *p, jar_entry *out);
 static bool lib_standin(const char *p, jar_entry *out)
 {
     const char *dd = tl_data_dir();
+    /* iOS names the app's container both /var/mobile/... and /private/var/mobile/... (realpath, Qt's plugin scan): either is it */
+    if (dd && !strncmp(p, "/private/var/", 13) && !strncmp(dd, "/var/", 5)) p += 8;
+    else if (dd && !strncmp(p, "/var/", 5) && !strncmp(dd, "/private/var/", 13)) dd += 8;
     size_t dl = dd ? strlen(dd) : 0;
     if (!dl || strncmp(p, dd, dl) || strncmp(p + dl, "/lib/", 5) || strchr(p + dl + 5, '/')) return false;
     const char *name = p + dl + 5;
@@ -498,6 +541,26 @@ void tl_note_missing_file(const char *path)
     const char *dot = strrchr(path, '.');
     if (strstr(path, "/obb/") && dot && !strcmp(dot, ".obb")) { said = true; tl_log_line("husk: the app's expansion file (OBB) is missing: %s", path); }
 }
+/* The native library directory holds empty stand-ins for the APK's libraries; one opened to be read gets the library's real
+ * bytes first (host path). Not on a plain stat: Unity looks at libil2cpp's (100 MB) without reading it. */
+static void fill_lib_standin(const char *real)
+{
+    size_t dl = strlen(tl_data_dir()); const char *nm = strrchr(real, '/');
+    struct stat lst;
+    if (nm && !strncmp(real, tl_data_dir(), dl) && !strncmp(real + dl, "/lib/", 5) && real + dl + 4 == nm && strlen(nm) > 4
+        && !strcmp(nm + strlen(nm) - 3, ".so") && stat(real, &lst) == 0 && lst.st_size == 0) {
+        bool tl_ld_has_lib(const char *name); bool tl_ld_extract_lib(const char *name, const char *dest);
+        if (tl_ld_has_lib(nm + 1)) tl_ld_extract_lib(nm + 1, real);
+    }
+}
+/* The same for a name relative to a directory descriptor. */
+static void fill_lib_standin_at(int dirfd, const char *name)
+{
+    char dir[PATH_MAX], full[PATH_MAX + 256];
+    if (!name || name[0] == '/' || fcntl(dirfd, F_GETPATH, dir) != 0) return;
+    snprintf(full, sizeof(full), "%s/%s", dir, name);
+    fill_lib_standin(full);
+}
 static int b_open(const char *path, int flags, unsigned mode)
 {
     char buf[1024]; static __thread char content[32768];
@@ -517,6 +580,7 @@ static int b_open(const char *path, int flags, unsigned mode)
         return fd;
     }
     const char *real = tl_path_resolve(path, buf, sizeof(buf));
+    if (real && (flags & 3) == 0) fill_lib_standin(real);
     if (strstr(path, "/auxv")) { int afd = tl_synth_open(path); if (afd >= 0) return afd; }   /* binary, not text */
     const char *s = synth_content(path, content, sizeof(content));
     if (s) {
@@ -587,6 +651,15 @@ static long b___read_chk(int fd, void *p, size_t n, size_t bufsz)
 static long b_write(int fd, const void *p, size_t n)
 {
     if (evfd_peer(fd) >= 0) fd = evfd_peer(fd);
+    if ((fd == 1 || fd == 2) && p && n > 0 && n < 2000) {
+        static int said;
+        if (said < 24) {
+            char buf[2004];
+            memcpy(buf, p, n); buf[n] = 0;
+            for (size_t i = 0; i < n; i++) if ((unsigned char)buf[i] < 9) { buf[0] = 0; break; }
+            if (buf[0]) { said++; tl_log_line("guest %s: %s", fd == 2 ? "stderr" : "stdout", buf); }
+        }
+    }
     TL_ERRNO_BEGIN(); long r = write(fd, p, n); int e = errno; TL_ERRNO_END();
     if (net_trace_fd(fd)) tl_log_line("net: write(fd %d, %zu) -> %ld errno %d", fd, n, r, r < 0 ? e : 0);
     return r;
@@ -673,7 +746,9 @@ static void ftrace(const char *what, const char *path, int r, int e)
     if (tr < 0) tr = getenv("TL_FILE_TRACE") ? atoi(getenv("TL_FILE_TRACE")) : 0;
     if (tr) tl_log_line("file: %s(%s) -> %d%s", what, path ? path : "(null)", r, r < 0 ? (e == ENOENT ? " ENOENT" : " error") : "");
 }
-static int b_access(const char *p, int m) { char b[1024]; jar_entry jar; if (jar_lookup(p, &jar)) { if (!jar.found) { tl_set_guest_errno(2); return -1; } if (m & 2) { tl_set_guest_errno(13); return -1; } return 0; } if (vfile_find(p)) { if (m & 2) { tl_set_guest_errno(13); return -1; } return 0; } TL_ERRNO_BEGIN(); int r = access(tl_path_resolve(p, b, sizeof(b)), m); int e = errno; TL_ERRNO_END(); ftrace("access", p, r, e); return r; }
+static int b_access(const char *p, int m) { char b[1024]; jar_entry jar; if (jar_lookup(p, &jar)) { if (!jar.found) { tl_set_guest_errno(2); return -1; } if (m & 2) { tl_set_guest_errno(13); return -1; } return 0; } if (vfile_find(p)) { if (m & 2) { tl_set_guest_errno(13); return -1; } return 0; }
+    /* the made-up /proc files exist, as b_stat says (Mono's runtime exits with "Mono requires /proc to be mounted" without /proc/self/maps) */
+    if (p && (!strncmp(p, "/proc/", 6) || !strncmp(p, "/sys/", 5))) { static __thread char c[65536]; if (strstr(p, "/auxv") || synth_content(p, c, sizeof(c))) { if (m & 2) { tl_set_guest_errno(13); return -1; } return 0; } } TL_ERRNO_BEGIN(); int r = access(tl_path_resolve(p, b, sizeof(b)), m); int e = errno; TL_ERRNO_END(); ftrace("access", p, r, e); return r; }
 static int b_chmod(const char *p, unsigned m) { char b[1024]; TL_ERRNO_BEGIN(); int r = chmod(tl_path_resolve(p, b, sizeof(b)), (mode_t)m); TL_ERRNO_END(); return r; }
 static int b_fchmod(int fd, unsigned m) { TL_ERRNO_BEGIN(); int r = fchmod(fd, (mode_t)m); TL_ERRNO_END(); return r; }
 static int b_link(const char *a, const char *b2) { char x[1024], y[1024]; TL_ERRNO_BEGIN(); int r = link(tl_path_resolve(a, x, sizeof(x)), tl_path_resolve(b2, y, sizeof(y))); TL_ERRNO_END(); return r; }
@@ -781,6 +856,7 @@ static int b_fstatat(int dirfd, const char *p, guest_stat *g, int flags)
     if (!p[0] && (flags & 0x1000 /* AT_EMPTY_PATH */)) return fstat_guest_fd(dirfd, g);
     if (p[0] == '/' || dirfd == -100) return (flags & 0x100) ? b_lstat(p, g) : b_stat(p, g);
     struct stat s;
+    fill_lib_standin_at(dirfd, p);     /* .NET for Android sizes its assembly store this way before mapping it */
     TL_ERRNO_BEGIN(); int r = fstatat(dirfd, p, &s, (flags & 0x100) ? AT_SYMLINK_NOFOLLOW : 0); TL_ERRNO_END();
     if (r == 0) fill_stat(g, &s);
     return r;
@@ -986,6 +1062,28 @@ static void anon_add(void *addr, size_t len)
     pthread_mutex_unlock(&g_anon_lock);
 }
 
+/* Mimalloc reserves a large anonymous range and munmaps the unused ends to align. Keep the list matching that. */
+static void anon_remove(uintptr_t addr, size_t len)
+{
+    uintptr_t end = addr + len;
+    pthread_mutex_lock(&g_anon_lock);
+    for (int i = 0; i < g_nanon; i++) {
+        uintptr_t a = g_anon[i].addr, e = a + g_anon[i].len;
+        if (end <= a || addr >= e) continue;
+        uintptr_t left = addr > a ? addr - a : 0;
+        uintptr_t right_a = end < e ? end : e, right = e > right_a ? e - right_a : 0;
+        if (left) {
+            g_anon[i].len = left;
+            if (right && g_nanon < MAX_ANON) { g_anon[g_nanon].addr = right_a; g_anon[g_nanon].len = right; g_nanon++; }
+        } else if (right) {
+            g_anon[i].addr = right_a; g_anon[i].len = right;
+        } else {
+            g_anon[i] = g_anon[--g_nanon]; i--;
+        }
+    }
+    pthread_mutex_unlock(&g_anon_lock);
+}
+
 static void anon_zap(uintptr_t addr, size_t len)
 {
     uintptr_t end = addr + len;
@@ -1000,6 +1098,9 @@ static void anon_zap(uintptr_t addr, size_t len)
             if (vm_region_64(mach_task_self(), &ra, &rs, VM_REGION_BASIC_INFO_64, (vm_region_info_t)&info, &cnt, &obj) != KERN_SUCCESS) break;
             if (ra > p) { p = ra; continue; }
             uintptr_t re = ra + rs < e ? ra + rs : e;
+            if (tl_ld_covers((const void *)(uintptr_t)p, re - p) || tl_xmem_contains((const void *)(uintptr_t)p)) {
+                p = re; continue;
+            }
             int prot = (info.protection & VM_PROT_READ ? PROT_READ : 0) | (info.protection & VM_PROT_WRITE ? PROT_WRITE : 0);
             mmap((void *)p, re - p, prot, MAP_FIXED | MAP_PRIVATE | MAP_ANON, -1, 0);
             p = re;
@@ -1008,11 +1109,21 @@ static void anon_zap(uintptr_t addr, size_t len)
     pthread_mutex_unlock(&g_anon_lock);
 }
 
+const char *tl_ld_symbol_at(const void *addr, const char **lib_name, const void **sym_addr);
 static int g_mm_trace = -1;
 static void mm_trace(const char *what, void *a, size_t l, long x, long y)
 {
     if (g_mm_trace < 0) g_mm_trace = getenv("TL_MM_TRACE") ? 1 : 0;
-    if (g_mm_trace) tl_log_line("mm: %s addr=%p len=%#zx %#lx %#lx", what, a, l, x, y);
+    if (!g_mm_trace) return;
+    /* a big one says who asked (the guest's code that called mmap, mprotect or madvise) */
+    if (l >= (64u << 20)) {
+        void *ra[8]; int n = backtrace(ra, 8);
+        const char *who = "?", *lib = NULL; const void *sa = NULL;
+        for (int i = 1; i < n; i++) { const char *sym = tl_ld_symbol_at(ra[i], &lib, &sa); if (lib) { who = sym ? sym : "?"; break; } }
+        tl_log_line("mm: %s addr=%p len=%#zx %#lx %#lx  <- %s %s", what, a, l, x, y, lib ? lib : "?", who);
+        return;
+    }
+    tl_log_line("mm: %s addr=%p len=%#zx %#lx %#lx", what, a, l, x, y);
 }
 
 /*
@@ -1025,10 +1136,49 @@ static void mm_trace(const char *what, void *a, size_t l, long x, long y)
 static struct { uintptr_t base; size_t len, real; } g_phantom[4];
 static int g_nphantom;
 
+/* Reserve before JIT aliases fragment the available aligned address range.
+ * This owns address space only; guest commits still happen on demand. */
+static vm_address_t g_compressed_heap;
+static pthread_mutex_t g_compressed_heap_lock = PTHREAD_MUTEX_INITIALIZER;
+void husk_prepare_compressed_heap(void)
+{
+    pthread_mutex_lock(&g_compressed_heap_lock);
+    if (!g_compressed_heap) {
+        vm_address_t address = 0;
+        kern_return_t kr = vm_map(mach_task_self(), &address, PHANTOM_HALF,
+            PHANTOM_HALF - 1, VM_FLAGS_ANYWHERE, MACH_PORT_NULL, 0, FALSE,
+            VM_PROT_NONE, VM_PROT_ALL, VM_INHERIT_COPY);
+        if (kr == KERN_SUCCESS) g_compressed_heap = address;
+    }
+    pthread_mutex_unlock(&g_compressed_heap_lock);
+}
+void husk_release_unused_compressed_heap(void)
+{
+    pthread_mutex_lock(&g_compressed_heap_lock);
+    if (g_compressed_heap && vm_deallocate(mach_task_self(), g_compressed_heap, PHANTOM_HALF) == KERN_SUCCESS)
+        g_compressed_heap = 0;
+    pthread_mutex_unlock(&g_compressed_heap_lock);
+}
+static bool compressed_heap_request(size_t len)
+{
+    /* V8 asks for 8 GiB; Dart omits the final host page from that request. */
+    return len == 2 * PHANTOM_HALF || len == 2 * PHANTOM_HALF - (size_t)getpagesize();
+}
+
 static void *phantom_reserve(size_t len)
 {
-    if (len != 2 * PHANTOM_HALF || g_nphantom >= 4) return MAP_FAILED;
-    void *res = MAP_FAILED;
+    if (!compressed_heap_request(len) || g_nphantom >= 4) return MAP_FAILED;
+    pthread_mutex_lock(&g_compressed_heap_lock);
+    vm_address_t address = g_compressed_heap;
+    g_compressed_heap = 0; /* ownership transfers to g_phantom below */
+    pthread_mutex_unlock(&g_compressed_heap_lock);
+    if (!address) {
+        if (vm_map(mach_task_self(), &address, PHANTOM_HALF, PHANTOM_HALF - 1,
+                   VM_FLAGS_ANYWHERE, MACH_PORT_NULL, 0, FALSE,
+                   VM_PROT_NONE, VM_PROT_ALL, VM_INHERIT_COPY) != KERN_SUCCESS)
+            address = 0;
+    }
+    void *res = address ? (void *)address : MAP_FAILED;
     /* Reserve 5 GiB, which holds an aligned 4 GiB only when it starts in the first GiB of an alignment period. Mappings come one after
      * another, so a miss is kept (it moves the next one on by a GiB) and given back once there is a hit. */
     void *held[8]; int nheld = 0;
@@ -1071,8 +1221,75 @@ static size_t phantom_clamp(uintptr_t a, size_t l)
     return l;
 }
 
+/* Whether only the JIT region can execute here: the phone (iOS), or a Mac told to behave like one (TL_PHONE_JIT=1). */
+static bool phone_jit(void)
+{
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+    return true;
+#else
+    static int on = -1;
+    if (on < 0) on = getenv("TL_PHONE_JIT") ? 1 : 0;
+    return on;
+#endif
+}
+/* File mappings at an offset Android allows (4 KiB pages) but this host does not (16 KiB): mapped from the host page below the
+ * offset, the guest given the address its offset lands on. munmap gets back what was really mapped. */
+static struct { uintptr_t guest, host; size_t len; } g_shifted[64];
+static int g_nshifted;
+static pthread_mutex_t g_shifted_lock = PTHREAD_MUTEX_INITIALIZER;
+static void *shifted_file_map(void *addr, size_t len, int prot, int df, int fd, long off)
+{
+    long pg = getpagesize(), delta = off & (pg - 1);
+    if (df & MAP_FIXED) {
+        /* a fixed private mapping can not move: anonymous memory with the file's bytes read into it */
+        if ((df & 0x3) != MAP_PRIVATE) { errno = EINVAL; return MAP_FAILED; }
+        void *r = mmap(addr, len, PROT_READ | PROT_WRITE, MAP_FIXED | MAP_PRIVATE | MAP_ANON, -1, 0);
+        if (r == MAP_FAILED) return r;
+        size_t got = 0;
+        while (got < len) { ssize_t n = pread(fd, (char *)r + got, len - got, off + (off_t)got); if (n <= 0) break; got += (size_t)n; }
+        if (prot != (PROT_READ | PROT_WRITE)) mprotect(r, len, prot);
+        return r;
+    }
+    char *h = mmap(NULL, len + (size_t)delta, prot, df, fd, off - delta);
+    if (h == MAP_FAILED) return MAP_FAILED;
+    pthread_mutex_lock(&g_shifted_lock);
+    if (g_nshifted < 64) { g_shifted[g_nshifted].guest = (uintptr_t)h + (uintptr_t)delta; g_shifted[g_nshifted].host = (uintptr_t)h; g_shifted[g_nshifted].len = len + (size_t)delta; g_nshifted++; }
+    pthread_mutex_unlock(&g_shifted_lock);
+    tl_note_once("a file was mapped at an offset that is not a multiple of this host's page size: mapped from the page below");
+    return h + delta;
+}
+static bool shifted_unmap(void *a, int *ret)
+{
+    pthread_mutex_lock(&g_shifted_lock);
+    for (int i = 0; i < g_nshifted; i++) if (g_shifted[i].guest == (uintptr_t)a) {
+        uintptr_t h = g_shifted[i].host; size_t l = g_shifted[i].len;
+        g_shifted[i] = g_shifted[--g_nshifted];
+        pthread_mutex_unlock(&g_shifted_lock);
+        *ret = munmap((void *)h, l);
+        return true;
+    }
+    pthread_mutex_unlock(&g_shifted_lock);
+    return false;
+}
+void *tl_ld_map_code(const char *path, uint64_t off, size_t len, void *at);
 static void *b_mmap(void *addr, size_t len, int prot, int flags, int fd, long off)
 {
+    /* A library file mapped executable (libffi's static trampolines): for a library imported from a dylib, its own signed code */
+    if ((prot & PROT_EXEC) && !(flags & 0x20) && fd >= 0 && off >= 0) {
+        char path[PATH_MAX];
+        if (fcntl(fd, F_GETPATH, path) != -1) {
+            void *r = tl_ld_map_code(path, (uint64_t)off, len, (flags & 0x10) ? addr : NULL);
+            if (r) { tl_note_once("a library's file mapped executable (libffi trampolines): its signed code is mapped again"); mm_trace("mmap-code", r, len, prot, flags); return r; }
+        }
+    }
+    /* JIT-less mode (TL_NO_XMEM): no executable memory exists, so a guest's own executable mapping (a regex or script JIT:
+     * PCRE2 under Qt) fails outright and the guest falls back to its interpreter; handing it plain memory would have it jump
+     * into data */
+    if ((prot & PROT_EXEC) && (flags & 0x20) && getenv("TL_NO_XMEM")) {
+        tl_note_once("JIT-less: the guest asked for executable memory of its own: refused (EACCES)");
+        tl_set_guest_errno(13);
+        return MAP_FAILED;
+    }
     /* A hooking library's trampolines (Geode): executable memory is a piece of the JIT region, written through the other view. */
     if ((prot & PROT_EXEC) && (flags & 0x20) && !(flags & 0x10) && tl_codewrite_enabled()) {
         uint8_t *rx, *rw;
@@ -1080,6 +1297,21 @@ static void *b_mmap(void *addr, size_t len, int prot, int flags, int fd, long of
         if (tl_xmem_alloc(n, &rx, &rw)) {
             memset(rw, 0, n);
             tl_log_line("mm: %#zx bytes of executable memory for the guest at %p", n, (void *)rx);
+            return rx;
+        }
+    }
+    /* A JIT's code memory where only the JIT region can execute (a phone: iOS 26+ lets nothing else run): LuaJIT maps it near its
+     * own code with a hint, writes the machine code, then makes it executable with mprotect -- which on a phone "succeeds" and
+     * then faults. An anonymous, code-sized, writable mapping hinted near the region comes from the region instead: its stores
+     * go through the writable view (code-write emulation), and mprotect there is a yes. TL_PHONE_JIT=1 does this on a Mac too. */
+    if (addr && !(prot & PROT_EXEC) && (prot & PROT_WRITE) && (flags & 0x20) && !(flags & 0x10) && len <= (32u << 20)
+        && tl_codewrite_enabled() && phone_jit() && tl_xmem_near(addr, 256u << 20)) {
+        uint8_t *rx, *rw;
+        size_t n = (len + TL_XMEM_PAGE - 1) & ~(size_t)(TL_XMEM_PAGE - 1);
+        if (tl_xmem_alloc(n, &rx, &rw)) {
+            memset(rw, 0, n);
+            tl_note_once("a JIT's code memory (mmap hinted near the code) comes from the JIT region");
+            mm_trace("mmap-jit", rx, len, prot, flags);
             return rx;
         }
     }
@@ -1093,7 +1325,14 @@ static void *b_mmap(void *addr, size_t len, int prot, int flags, int fd, long of
     if (max_map == (size_t)-2) max_map = getenv("TL_MM_MAX_GIB") ? (size_t)atoi(getenv("TL_MM_MAX_GIB")) << 30 : (size_t)-1;
     bool refuse = len > max_map && (flags & 0x20) && !(flags & 0x10);
     if (refuse) { tl_log_line("mm: refusing %#zx bytes (TL_MM_MAX_GIB)", len); errno = ENOMEM; }
-    void *r = refuse || (force_phantom && len == 2 * PHANTOM_HALF && prot == 0 && (flags & 0x20) && !(flags & 0x10)) ? MAP_FAILED
+    bool shifted = !(flags & 0x20) && fd >= 0 && (off & (getpagesize() - 1)) != 0 && (off & 4095) == 0;
+    if ((flags & 0x10) && addr && tl_ld_covers(addr, len)) {
+        tl_note_once("mmap(MAP_FIXED) over a loaded library: refused");
+        errno = ENOMEM;
+        refuse = true;
+    }
+    void *r = refuse || (force_phantom && compressed_heap_request(len) && prot == 0 && (flags & 0x20) && !(flags & 0x10)) ? MAP_FAILED
+            : shifted ? shifted_file_map(addr, len, prot_filter(prot, "mmap"), df, fd, off)
             : mmap(addr, len, prot_filter(prot, "mmap"), df, (flags & 0x20) ? -1 : fd, off);
     if (r == MAP_FAILED && (errno == ENOMEM || force_phantom) && prot == 0 && (flags & 0x20) && !(flags & 0x10)) { r = phantom_reserve(len); if (r != MAP_FAILED) errno = 0; }
     TL_ERRNO_END();
@@ -1113,8 +1352,17 @@ static void *b_mmap(void *addr, size_t len, int prot, int flags, int fd, long of
 static int b_munmap(void *a, size_t l)
 {
     if (tl_xmem_contains(a)) return 0;                       /* JIT memory handed out above: kept, as the region only grows */
+    if (tl_ld_covers(a, l)) {
+        /* Mimalloc trims a large reservation to an aligned arena. Under AOT that reservation can
+         * sit next to a dylib; unmapping the overlap would drop signed code. Leave the library. */
+        tl_note_once("munmap of a loaded library: ignored");
+        mm_trace("munmap", a, l, 0, 0);
+        return 0;
+    }
+    { int sr; if (shifted_unmap(a, &sr)) { mm_trace("munmap", a, l, sr, errno); return sr; } }
     size_t real = phantom_clamp((uintptr_t)a, l);
     if (real == 0) return 0;                                 /* the half of a phantom range that was never mapped */
+    anon_remove((uintptr_t)a, real);
     TL_ERRNO_BEGIN(); int r = munmap(a, real); TL_ERRNO_END(); mm_trace("munmap", a, real, r, errno); return r;
 }
 /* Whether a range is inside memory the guest mapped for itself (not a library's own pages). */
@@ -1135,10 +1383,13 @@ static int b_mprotect(void *a, size_t l, int prot)
     /* Code a hooking library is about to patch: its permissions stay as they are, and its stores are carried out through
      * the writable view as they fault (husk-tl-codewrite.c). */
     if (tl_codewrite_enabled() && tl_xmem_contains(a)) { mm_trace("mprotect", a, l, prot, 0); return 0; }
+    /* An imported AOT dylib is signed r-x; the guest asking to write its RELRO or patch a constructor is told yes, and
+     * stores go to the writable copies (husk-tl-codewrite). */
+    if (tl_ld_aot_contains(a)) { mm_trace("mprotect", a, l, prot, 0); return 0; }
     if (prot & PROT_EXEC) {
         /* the host's own code (a guest that patches "the linker", which here is Apple's): never touched */
         Dl_info di;
-        if (dladdr(a, &di) && di.dli_fname && !tl_xmem_contains(a)) {
+        if (dladdr(a, &di) && di.dli_fname && !tl_xmem_contains(a) && !tl_ld_aot_contains(a)) {
             { const char *lib = NULL; const void *sa = NULL; const char *sym = tl_ld_symbol_at(__builtin_return_address(0), &lib, &sa);
               static int said; if (said++ < 4) tl_log_line("bionic: mprotect(%p, %#zx, %d) on the host's code (%s %s) asked by %s %s: refused", a, l, prot,
                   di.dli_fname ? strrchr(di.dli_fname, '/') + 1 : "?", di.dli_sname ? di.dli_sname : "?", lib ? lib : "?", sym ? sym : "?"); }
@@ -1161,7 +1412,7 @@ static int b_mprotect(void *a, size_t l, int prot)
             }
         }
         static int allow = -1;
-        if (allow < 0) allow = getenv("TL_NO_GUEST_JIT") ? 0 : 1;
+        if (allow < 0) allow = getenv("TL_NO_GUEST_JIT") || getenv("TL_NO_XMEM") ? 0 : 1;   /* JIT-less: as a phone with no debugger */
         int r = -1;
         if (allow) {
             TL_ERRNO_BEGIN();
@@ -1254,13 +1505,50 @@ static void sig_trace(const char *what, int g)
     tl_log_line("signal[%s]: %s %d", nm, what, g);
 }
 
+/* The context a Linux arm64 handler is given (bionic's ucontext_t, the kernel's layout): built from Darwin's for each delivery and
+ * copied back after, so a handler that reads the interrupted registers (Mono's thread suspension samples the pc and sp, and
+ * gives up and retries forever when they are garbage) or changes them sees what a phone would show it. */
+typedef struct { uint64_t fault_address, regs[31], sp, pc, pstate; uint8_t reserved[4096] __attribute__((aligned(16))); } guest_sigcontext;
+typedef struct {
+    uint64_t uc_flags; void *uc_link;
+    struct { void *ss_sp; int ss_flags; int pad; size_t ss_size; } uc_stack;
+    uint64_t uc_sigmask; uint8_t sigmask_pad[120];
+    guest_sigcontext uc_mcontext __attribute__((aligned(16)));
+} guest_ucontext;
+_Static_assert(__builtin_offsetof(guest_ucontext, uc_mcontext) == 176, "bionic's ucontext_t puts uc_mcontext at 176");
+_Static_assert(__builtin_offsetof(guest_sigcontext, reserved) == 288, "the kernel's sigcontext puts __reserved at 288");
+
 static void host_signal_entry(int dsig, siginfo_t *info, void *uctx)
 {
     int gsig = tl_signal_from_darwin(dsig);
     sig_trace("delivered", gsig);
     void *h = g_guest_sig[gsig < 32 ? gsig : 0].handler;
     if (!h || h == (void *)1) return;
-    ((guest_handler)h)(gsig, info, uctx);
+    ucontext_t *uc = uctx;
+    if (!uc || !uc->uc_mcontext) { ((guest_handler)h)(gsig, info, uctx); return; }
+    static __thread guest_ucontext *g;     /* 4.5 KiB: too much for a small signal stack */
+    if (!g) g = calloc(1, sizeof(*g));
+    if (!g) { ((guest_handler)h)(gsig, info, uctx); return; }
+    _STRUCT_ARM_THREAD_STATE64 *ss = &uc->uc_mcontext->__ss;
+    memset(g, 0, offsetof(guest_ucontext, uc_mcontext) + offsetof(guest_sigcontext, reserved));
+    g->uc_stack.ss_sp = uc->uc_stack.ss_sp; g->uc_stack.ss_size = uc->uc_stack.ss_size; g->uc_stack.ss_flags = uc->uc_stack.ss_flags;
+    for (int r = 0; r < 29; r++) g->uc_mcontext.regs[r] = ss->__x[r];
+    g->uc_mcontext.regs[29] = arm_thread_state64_get_fp(*ss);
+    g->uc_mcontext.regs[30] = arm_thread_state64_get_lr(*ss);
+    g->uc_mcontext.sp = arm_thread_state64_get_sp(*ss);
+    g->uc_mcontext.pc = arm_thread_state64_get_pc(*ss);
+    g->uc_mcontext.pstate = ss->__cpsr;
+    g->uc_mcontext.fault_address = info ? (uint64_t)(uintptr_t)info->si_addr : 0;
+    guest_ucontext *mine = g;
+    g = NULL;                              /* a signal arriving inside the handler gets a buffer of its own */
+    ((guest_handler)h)(gsig, info, mine);
+    for (int r = 0; r < 29; r++) ss->__x[r] = mine->uc_mcontext.regs[r];
+    arm_thread_state64_set_fp(*ss, mine->uc_mcontext.regs[29]);
+    arm_thread_state64_set_lr_fptr(*ss, (void *)(uintptr_t)mine->uc_mcontext.regs[30]);
+    arm_thread_state64_set_sp(*ss, mine->uc_mcontext.sp);
+    arm_thread_state64_set_pc_fptr(*ss, (void *)(uintptr_t)mine->uc_mcontext.pc);
+    if (g) free(g);
+    g = mine;
 }
 
 static int is_fault_signal(int g) { return g == 4 || g == 5 || g == 6 || g == 7 || g == 8 || g == 11; }
@@ -1474,7 +1762,7 @@ static long linux_syscall_impl(long a0, long a1, long a2, long a3, long a4, long
     case 233: return 0;                                                                 /* madvise */
     case 122: case 123: return 0;                                                       /* sched_setaffinity / getaffinity */
     case 167: return 0;                                                                 /* prctl */
-    case 160: return 0;                                                                 /* uname */
+    case 160: { int tl_bionic_uname(void *); return tl_bionic_uname((void *)a0); }    /* uname: filled in, as the libc call is */
     case 47: {                                                                          /* fallocate: growing the file (Superpack maps it at its full size, then writes) */
         if (a1) return -95;
         struct stat st;
@@ -1497,7 +1785,38 @@ static long linux_syscall_impl(long a0, long a1, long a2, long a3, long a4, long
     case 226: { int r = b_mprotect((void *)a0, (size_t)a1, (int)a2); return r < 0 ? -*tl_guest_errno_ptr() : 0; }
     case 79:  { int r = b_fstatat((int)a0, (const char *)a1, (guest_stat *)a2, (int)a3); return r < 0 ? -*tl_guest_errno_ptr() : 0; }
     case 80:  { int r = b_fstat((int)a0, (guest_stat *)a1); return r < 0 ? -*tl_guest_errno_ptr() : 0; }
+    case 96: { uint64_t t = 0; pthread_threadid_np(NULL, &t); return (long)t; }        /* set_tid_address */
+    case 99: return 0;                                                                  /* set_robust_list */
+    case 117: return -1;                                                                /* ptrace: EPERM */
     default: break;
+    }
+    /* the rest, by the libc function bionic would have made the call through: called as the guest calls it (arguments in
+       registers), -1 and errno turned into -errno as the kernel answers */
+    {
+        static const struct { short nr; const char *fn; } calls[] = {
+            { 19, "eventfd" }, { 20, "epoll_create1" }, { 21, "epoll_ctl" }, { 22, "epoll_pwait" }, { 23, "dup" }, { 24, "dup3" },
+            { 25, "fcntl" }, { 29, "ioctl" }, { 32, "flock" }, { 34, "mkdirat" }, { 35, "unlinkat" }, { 37, "linkat" }, { 38, "renameat" },
+            { 43, "fstatfs" }, { 46, "ftruncate" }, { 49, "chdir" }, { 50, "fchdir" }, { 52, "fchmod" }, { 53, "fchmodat" }, { 55, "fchown" },
+            { 59, "pipe2" }, { 61, "getdents64" }, { 65, "readv" }, { 66, "writev" }, { 67, "pread64" }, { 68, "pwrite64" },
+            { 71, "sendfile" }, { 73, "ppoll" }, { 78, "readlinkat" }, { 82, "fsync" }, { 83, "fdatasync" },
+            { 85, "timerfd_create" }, { 86, "timerfd_settime" }, { 87, "timerfd_gettime" }, { 88, "utimensat" },
+            { 114, "clock_getres" }, { 115, "clock_nanosleep" }, { 163, "getrlimit" }, { 164, "setrlimit" }, { 165, "getrusage" },
+            { 166, "umask" }, { 179, "sysinfo" }, { 198, "socket" }, { 199, "socketpair" }, { 200, "bind" }, { 201, "listen" },
+            { 202, "accept" }, { 203, "connect" }, { 204, "getsockname" }, { 205, "getpeername" }, { 206, "sendto" }, { 207, "recvfrom" },
+            { 208, "setsockopt" }, { 209, "getsockopt" }, { 210, "shutdown" }, { 211, "sendmsg" }, { 212, "recvmsg" }, { 242, "accept4" },
+            { 261, "prlimit64" }, { 281, "execveat" },
+        };
+        for (size_t i = 0; i < sizeof(calls) / sizeof(calls[0]); i++) {
+            if (calls[i].nr != nr) continue;
+            void *tl_bionic_find(const char *name);
+            long (*f)(long, long, long, long, long, long) = (long (*)(long, long, long, long, long, long))tl_bionic_find(calls[i].fn);
+            if (!f && nr == 261) f = (long (*)(long, long, long, long, long, long))tl_bionic_find("prlimit");
+            if (!f) break;
+            *tl_guest_errno_ptr() = 0;
+            long r = f(a0, a1, a2, a3, a4, a5);
+            if (nr == 166) return r;                                                    /* umask's answer is never an error */
+            return r == -1 ? -(*tl_guest_errno_ptr() ? *tl_guest_errno_ptr() : 38) : r;
+        }
     }
     char what[96];
     snprintf(what, sizeof(what), "raw system call %ld is not provided (ENOSYS)", nr);
@@ -1618,6 +1937,7 @@ static int b___openat_2(int dirfd, const char *path, int flags) { return b_opena
 static int b_openat(int dirfd, const char *path, int flags, unsigned mode)
 {
     if (at_plain(dirfd, path)) return b_open(path, flags, mode);
+    if ((flags & 3) == 0) fill_lib_standin_at(dirfd, path);
     TL_ERRNO_BEGIN(); int fd = openat(dirfd, path, oflags_to_darwin(flags), mode); TL_ERRNO_END();
     return fd;
 }
