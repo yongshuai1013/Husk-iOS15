@@ -1,8 +1,3 @@
-/* Husk zh-Hant (Traditional Chinese, Taiwan) localization. */
-/* Keys are the English source strings (SwiftUI LocalizedStringKey). */
-/* Converted from upstream zh-Hans with Taiwan terminology; */
-/* fork/JIT-less strings translated directly. */
-
 "%@" = "%@";
 "%@ Orientation and resolution apply the next time the game starts, and a game already running in this session needs Husk closed and opened again." = "%@ 方向與解析度會在下次遊戲啟動時套用；已在本次執行中執行的遊戲，需要關閉 Husk 再重新開啟。";
 "%@ apps" = "%@ 個應用";
@@ -262,7 +257,6 @@
 "Pair on this %@" = "在此 %@ 上配對";
 "Pairing code %@" = "配對碼 %@";
 "Pairing with Husk" = "與 Husk 配對";
-"Password (empty if none)" = "密碼（沒有可留空）";
 "Paste any F-Droid-compatible repository index URL." = "貼上任意相容 F-Droid 的來源索引 URL。";
 "Performance" = "效能";
 "Performance readout" = "效能讀數";
@@ -369,7 +363,6 @@
 "The report holds the full log of that run and which device and build it was on. Nothing is sent anywhere unless you share it." = "報告包含那次執行的完整日誌，以及所用的裝置和版本。除非你分享，否則不會傳送到任何地方。";
 "Theme" = "主題";
 "They go to %@. Unmodified APKs install from here too." = "它們會傳到 %@。未經修改的 APK 也可以從這裡安裝。";
-"This APK has no 64-bit code Husk can run, so it will probably not start." = "這個 APK 沒有 Husk 能執行的 64 位元程式碼，因此很可能無法啟動。";
 "This certificate has expired. Refresh Husk in your store, then import its certificate again." = "此憑證已過期。請在你的商店中刷新 Husk，然後重新匯入它的憑證。";
 "This iPhone" = "這臺 iPhone";
 "This installation can only wait about 30 seconds in the background, so go to Settings straight away." = "這次安裝在背景只能等待約 30 秒，所以請立即前往「設定」。";
@@ -439,3 +432,12 @@
 "關於" = "關於";
 "關於 Husk" = "關於 Husk";
 "首頁" = "首頁";
+" Husk runs ARM (arm64 and 32-bit ARM translated to arm64). Look for an ARM build of this app." = " Husk 能執行 ARM 程式碼（arm64，以及轉譯成 arm64 的 32 位元 ARM）。請尋找這個 App 的 ARM 版本。";
+"Enter the password for the private key. Leave it blank if no password is required." = "請輸入私鑰的密碼；如果私鑰沒有密碼，留空即可。";
+"Password" = "密碼";
+"StikDebug did not attach within a minute. Make sure it's installed and try again." = "StikDebug 在一分鐘內沒有連上。請確認它已安裝，然後再試一次。";
+"That .p12 needs a password. Enter the one you set when you exported it." = "這個 .p12 需要密碼，請輸入匯出時設定的那個密碼。";
+"That password did not open the .p12. Check it, or export the certificate again." = "這個密碼打不開該 .p12。請檢查密碼，或重新匯出憑證。";
+"The store's certificate could not be opened. If you have a .p12, import that with the password you set when you exported it." = "商店的憑證打不開。如果你有 .p12 檔，請用匯出時設定的密碼匯入它。";
+"This APK has no ARM code Husk can run, so it will probably not start." = "這個 APK 沒有 Husk 能執行的 ARM 程式碼，因此很可能無法啟動。";
+"Waiting for StikDebug to attach…" = "正在等待 StikDebug 連接…";
