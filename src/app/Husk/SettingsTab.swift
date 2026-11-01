@@ -841,7 +841,7 @@ struct JITLessSettings: View {
     @State private var cacheBytes = JITLess.cacheBytes
 
     var body: some View {
-        HuskForm {
+        Form {
             Section {
                 Toggle("Play without JIT", isOn: $jitless)
                 DetailRow(label: "Prebuilt games", value: JITLess.libraryCount > 0 ? "Geometry Dash" : "none in this build", mono: false)
