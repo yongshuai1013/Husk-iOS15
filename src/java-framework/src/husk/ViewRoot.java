@@ -289,7 +289,7 @@ public final class ViewRoot implements ViewParent {
             mView.layout(0, 0, w, h);
         } finally { mInLayout = false; }
         mObserver.dispatchOnGlobalLayout();
-        if (sDump == null) sDump = Boolean.TRUE; /* DIAGNOSTIC BUILD: view-tree dump always on (drawer-blank hunt) */
+        if (sDump == null) sDump = System.getenv("TL_VIEW_DUMP") != null;
         if (sDump) {
             long now = android.os.SystemClock.uptimeMillis();
             if (now - mLastDump > 3000) { mLastDump = now; dump(mView, 0); }
