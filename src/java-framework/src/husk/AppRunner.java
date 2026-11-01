@@ -265,6 +265,16 @@ public final class AppRunner {
                         for (int k = sStack.size() - 1; k >= 0; k--) if (startedAs(sStack.get(k)).equals(intent.getComponent().getClassName())) {
                             Activity existing = sStack.get(k);
                             while (top() != existing) finishNow(top(), false);
+                            boolean reuse = (intent.getFlags() & 0x20000000 /* SINGLE_TOP */) != 0 || c.launchMode == 1 || c.launchMode == 2;
+                            if (!reuse) {
+                                /* Android: CLEAR_TOP on a standard-launch activity finishes the existing
+                                   instance too and creates a fresh one, so onCreate runs again. Silently
+                                   reusing it kept whatever state the app left behind in onPause: 2048 fades
+                                   its content out on the way out and back in only from onCreate, so a reused
+                                   Main stayed invisible forever. */
+                                finishNow(existing, false);
+                                break;
+                            }
                             existing.setIntent(intent);
                             existing.huskActivityResult(-1, 0, null);
                             if (!existing.isResumedHusk()) { existing.huskRestart(); existing.huskStart(); existing.huskResume(); }
