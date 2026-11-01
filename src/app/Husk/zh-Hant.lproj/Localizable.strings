@@ -441,3 +441,5 @@
 "The store's certificate could not be opened. If you have a .p12, import that with the password you set when you exported it." = "商店的憑證打不開。如果你有 .p12 檔，請用匯出時設定的密碼匯入它。";
 "This APK has no ARM code Husk can run, so it will probably not start." = "這個 APK 沒有 Husk 能執行的 ARM 程式碼，因此很可能無法啟動。";
 "Waiting for StikDebug to attach…" = "正在等待 StikDebug 連接…";
+"Keyboard" = "鍵盤";
+"Shows or hides the keyboard for the app" = "顯示或隱藏這個 App 的鍵盤";
