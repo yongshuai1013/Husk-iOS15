@@ -108,6 +108,7 @@ struct GamePage: View {
     /// Another game already loaded in this run of Husk: engines cannot be unloaded, so this one cannot start until Husk is
     /// closed and opened again.
     private var blockedBy: String? {
+        if Router.shared.androidStarted { return "Android" }
         guard let loaded = husk_native_loaded_apk().map({ String(cString: $0) }), let apk = app.apks.first, loaded != apk
         else { return nil }
         return store.apps.first { $0.apks.first == loaded }?.label ?? "Another game"
@@ -124,6 +125,7 @@ struct GamePage: View {
         List {
             Section {
                 PageHero(item: .game(app), subtitle: subtitle) { primary }
+                    .heroRow()
             } footer: {
                 if isGeodeLauncher {
                     Text("This is Geode's Android launcher. On Husk, Geode runs inside Geometry Dash instead: turn it on here "
@@ -133,10 +135,9 @@ struct GamePage: View {
                     Text("\(other) is still loaded, and a game cannot be unloaded once it has started. Close Husk with the "
                        + "button above, then open it again to play \(app.label).")
                 } else if !runs {
-                    Text("This APK has no 64-bit code Husk can run, so it will probably not start.")
+                    Text("This APK has no ARM code Husk can run, so it will probably not start.")
                 }
             }
-            .heroRow()
 
             // what the files say before it starts: a damaged APK, the wrong CPU, a missing piece, protection that refuses Husk
             if let d = preflight {
@@ -283,7 +284,7 @@ struct GamePage: View {
         if app.report?.runsOnNativeRuntime == true || app.report?.webKind != nil, AppWindows.opensInWindow(app) {
             AppWindows.shared.open(app)
         } else {
-            AppWindows.shared.close(app)
+            AppWindows.shared.close()
             playing = true
         }
     }
@@ -349,11 +350,11 @@ struct GamePage: View {
             } else {
                 BigButton(title: "Add Geometry Dash First", systemImage: "plus", prominent: false) { }.disabled(true)
             }
-        } else if blockedBy != nil {
-            BigButton(title: "Close Husk to Play", systemImage: "xmark.circle", prominent: false) { confirmQuit = true }
         } else if let preparing {
             HStack(spacing: 10) { ProgressView(); Text(preparing).foregroundStyle(.secondary).lineLimit(1) }
                 .frame(maxWidth: .infinity).frame(height: 50)
+        } else if blockedBy != nil {
+            BigButton(title: "Close Husk to Play", systemImage: "xmark.circle", prominent: false) { confirmQuit = true }
         } else if !Launcher.jitOn && !JITLess.enabled {
             if jit.busy {
                 HStack(spacing: 10) { ProgressView(); Text(jit.status ?? "Turning on JIT…").foregroundStyle(.secondary) }
@@ -389,12 +390,12 @@ struct AndroidAppPage: View {
         List {
             Section {
                 PageHero(item: item, subtitle: item.usedText ?? "Runs inside Android") { primary }
+                    .heroRow()
             } footer: {
                 if router.pendingAndroidLaunch == app.name, !host.isReady {
                     Text("\(live.label) opens by itself once Android has started.")
                 }
             }
-            .heroRow()
 
             if !ShowcaseStore.shared.pictures(for: app.name).isEmpty {
                 Section("Screenshots") {
@@ -506,10 +507,10 @@ struct AndroidSystemPage: View {
                         if let progress { ProgressView(value: progress, total: 1.0) }
                     }
                 }
+                    .heroRow()
             } footer: {
                 if let note { Text(note) }
             }
-            .heroRow()
 
             if host.isReady {
                 Section {

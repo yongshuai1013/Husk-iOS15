@@ -49,7 +49,7 @@ struct TLTechnicalView: View {
 
     private var report: TLReport? { app.report }
     private var logURL: URL { app.dataDirectory.appendingPathComponent("native-run.log") }
-    private var arm64: [TLLibrary] { (report?.libraries ?? []).filter { $0.abi == "arm64-v8a" } }
+    private var arm64: [TLLibrary] { (report?.libraries ?? []).filter { $0.abi == "arm64-v8a" || $0.abi == "armeabi-v7a" || $0.abi == "armeabi" } }
 
     var body: some View {
         List {
