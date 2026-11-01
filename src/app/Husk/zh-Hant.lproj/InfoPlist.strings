@@ -1,0 +1,9 @@
+/* Husk zh-Hant InfoPlist strings. */
+
+"CFBundleDisplayName" = "Husk";
+"NSCameraUsageDescription" = "Husk 使用相機讀取配對用的二維碼。";
+"NSLocalNetworkUsageDescription" = "Husk 透過本地網路連接偵錯程式，為遊戲開啟 JIT，也接收從電腦傳來的資料夾。";
+"NSMicrophoneUsageDescription" = "Husk 透過麥克風為遊戲和應用錄音。";
+"NSPhotoLibraryAddUsageDescription" = "Husk 把遊戲截圖和匯出的檔案存入你的相簿。";
+"NSPhotoLibraryUsageDescription" = "Husk 讀取你相簿中的圖片，作為遊戲或應用的頭像。";
+"NSSupportsLiveActivitiesButtonText" = "為下載進度啟用即時動態";

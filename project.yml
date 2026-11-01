@@ -30,6 +30,7 @@ targets:
       - path: src/app/Husk
         includes:
           - "**/*.swift"
+          - "**/*.strings"
       - path: src/app/Husk/Play
         includes:
           - "**/*.swift"
