@@ -82,7 +82,6 @@ public class ValueAnimator extends Animator {
         mReversing = reverse;
         mStarted = true; mPaused = false; mRunning = false; mIteration = 0; mStartListenersCalled = false;
         mStartTime = -1;
-        android.util.Log.i("AnimTrace", "VA start dur=" + mDuration + " delay=" + mStartDelay + " listeners=" + (mUpdate != null ? mUpdate.size() : 0));
         Handler.get().add(this);
         if (mStartDelay == 0 || mSeekTime >= 0) {
             startNow(android.view.animation.AnimationUtils.currentAnimationTimeMillis());
@@ -164,7 +163,7 @@ public class ValueAnimator extends Animator {
         if (mValues != null) for (PropertyValuesHolder h : mValues) h.calculate(f);
         if (mUpdate != null) for (AnimatorUpdateListener l : new ArrayList<>(mUpdate)) l.onAnimationUpdate(this);
     }
-    void frameDone() { android.util.Log.i("AnimTrace", "VA done dur=" + mDuration); finish(); }
+    void frameDone() { finish(); }
 
     @Override public ValueAnimator clone() {
         ValueAnimator a = (ValueAnimator) super.clone();
