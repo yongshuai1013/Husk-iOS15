@@ -94,6 +94,7 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, Ke
     }
     public final void huskRestart() { onRestart(); }
     public final void huskResume() {
+        android.util.Log.i("LifeTrace", "RESUME " + getClass().getName() + "@" + Integer.toHexString(System.identityHashCode(this)));
         each(c -> c.onActivityPreResumed(this));
         mCalled = false;
         onResume();
@@ -104,6 +105,7 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, Ke
         if (mVisibleFromClient) makeVisible();
     }
     public final void huskPause() {
+        android.util.Log.i("LifeTrace", "PAUSE " + getClass().getName() + "@" + Integer.toHexString(System.identityHashCode(this)));
         each(c -> c.onActivityPrePaused(this));
         fragmentHost(FragmentManager.HOST_STARTED);            /* fragments pause before the activity, as performPause */
         mResumed = false; onPause();

@@ -201,6 +201,7 @@ public final class AppRunner {
         a.huskAttach(base, sApp, intent, info, caller, request);
         if (prev != null && prev.isResumedHusk()) prev.huskPause();
         sStack.add(a);
+        android.util.Log.i("LifeTrace", "LAUNCH " + cls + "@" + Integer.toHexString(System.identityHashCode(a)) + " depth=" + sStack.size());
         a.huskCreate(null);
         if (!a.isFinishing()) { a.huskStart(); a.huskResume(); }
         if (prev != null && !a.isFinishing()) {
@@ -297,6 +298,7 @@ public final class AppRunner {
     public static void finish(Activity a) { sHandler.post(() -> finishNow(a, true)); }
     private static void finishNow(Activity a, boolean resumeBelow) {
         android.util.Log.d("Husk", "finish " + a.getClass().getName());
+        android.util.Log.i("LifeTrace", "FINISH " + a.getClass().getName() + "@" + Integer.toHexString(System.identityHashCode(a)));
         int idx = sStack.indexOf(a);
         if (idx < 0) return;
         boolean wasTop = idx == sStack.size() - 1;

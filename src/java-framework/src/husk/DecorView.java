@@ -168,7 +168,7 @@ public final class DecorView extends FrameLayout {
         return false;
     }
     public boolean superDispatchGenericMotionEvent(MotionEvent e) { return super.dispatchGenericMotionEvent(e); }
-    @Override public void onWindowFocusChanged(boolean f) { super.onWindowFocusChanged(f); Window.Callback cb = mWindow.getCallback(); if (cb != null && !mWindow.isDestroyed()) cb.onWindowFocusChanged(f); }
+    @Override public void onWindowFocusChanged(boolean f) { android.util.Log.i("LifeTrace", "FOCUS " + f + " ctx=" + getContext()); super.onWindowFocusChanged(f); Window.Callback cb = mWindow.getCallback(); if (cb != null && !mWindow.isDestroyed()) cb.onWindowFocusChanged(f); }
     @Override protected void onAttachedToWindow() { super.onAttachedToWindow(); Window.Callback cb = mWindow.getCallback(); if (cb != null && !mWindow.isDestroyed()) cb.onAttachedToWindow(); }
     @Override protected void onDetachedFromWindow() { super.onDetachedFromWindow(); Window.Callback cb = mWindow.getCallback(); if (cb != null) cb.onDetachedFromWindow(); }
     public Window getWindowHusk() { return mWindow; }

@@ -59,6 +59,7 @@ public class ViewPropertyAnimator {
     public void cancel() { if (mScheduled) { mView.removeCallbacks(mStarter); mScheduled = false; mPending.clear(); } if (mRunning != null) mRunning.cancel(); }
     private void startAnimation() {
         mScheduled = false;
+        android.util.Log.i("AnimTrace", "VPA start on " + mView.getClass().getName() + " #" + Integer.toHexString(mView.getId()) + " ctx=" + mView.getContext() + " props=" + mPending.size() + " dur=" + getDuration() + " delay=" + mStartDelay);
         if (mPending.isEmpty()) return;
         final ArrayList<float[]> props = new ArrayList<>(mPending);
         mPending.clear();
